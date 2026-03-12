@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from sqlalchemy import create_engine, text
+from sqlalchemy.types import String, Date, Float, BigInteger
 
 warnings.filterwarnings("ignore")
 
@@ -196,8 +197,19 @@ def setup_mysql(df: pd.DataFrame):
 
     t0 = time.perf_counter()
     try:
-        df.to_sql("stock_data", engine, if_exists="replace", index=False,
-                  chunksize=5000, method="multi")
+        df.to_sql(
+            "stock_data", engine, if_exists="replace", index=False,
+            chunksize=5000, method="multi",
+            dtype={
+                "Symbol": String(10),      # VARCHAR(10)，避免 TEXT 无法建索引
+                "Date":   Date(),
+                "Open":   Float(),
+                "High":   Float(),
+                "Low":    Float(),
+                "Close":  Float(),
+                "Volume": BigInteger(),
+            },
+        )
 
         # ★ 关键改进：给 MySQL 也建索引，保证公平对比
         with engine.connect() as conn:
