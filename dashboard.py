@@ -7,6 +7,7 @@ Usage:
     streamlit run dashboard.py
 """
 
+import os
 import time
 import statistics
 from pathlib import Path
@@ -16,6 +17,13 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+
+# ── Optional .env support ──
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
 
 # ── Page Config ──
 st.set_page_config(
@@ -28,12 +36,12 @@ st.set_page_config(
 DATA_DIR    = Path(__file__).resolve().parent / "data"
 DUCKDB_FILE = str(DATA_DIR / "stock_analytics.duckdb")
 
-# MySQL config
-MYSQL_USER     = "root"
-MYSQL_PASSWORD = "password"
-MYSQL_HOST     = "127.0.0.1"
-MYSQL_PORT     = "3306"
-MYSQL_DB       = "stock_db"
+# MySQL config — env var first, defaults as fallback
+MYSQL_USER     = os.getenv("MYSQL_USER",     "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
+MYSQL_HOST     = os.getenv("MYSQL_HOST",     "127.0.0.1")
+MYSQL_PORT     = os.getenv("MYSQL_PORT",     "3306")
+MYSQL_DB       = os.getenv("MYSQL_DB",       "stock_db")
 
 
 # ============================================================

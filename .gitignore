@@ -1,0 +1,60 @@
+# ==============================================================
+#  Python
+# ==============================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ==============================================================
+#  Secrets — never commit
+# ==============================================================
+.env
+*.env.local
+
+# ==============================================================
+#  Data artifacts
+# ==============================================================
+# Commit the *canonical* demo dataset so the TA can run the project
+# offline (guideline requires "a small dataset" to be included), but
+# keep ad-hoc and large files out of git.
+data/*.duckdb
+data/*_large.parquet
+data/*_large.csv
+data/stock_analytics_*.duckdb
+!data/stock_analytics.duckdb
+
+# Keep the canonical 5-stock demo files in git:
+!data/5stocks_2015_2025.parquet
+!data/5stocks_2015_2025.csv
+!data/5stocks_2015_2025.duckdb
+
+# The old AAPL_MSFT_... named cache files — regenerated on demand.
+data/AAPL_*.parquet
+data/AAPL_*.csv
+
+# ==============================================================
+#  Benchmark output — regenerable, don't bloat history
+# ==============================================================
+# Commit a single "golden" benchmark CSV + explain report for the
+# midterm / demo baseline; ignore the per-session JSON dumps.
+output/benchmark_20*.json
+output/profile_Q*.json
+output/scaling_results_*.csv
+
+# Keep these:
+!output/benchmark_results.csv
+!output/explain_report.txt
+!output/benchmark_small.csv
+!output/benchmark_large.csv
+
+# ==============================================================
+#  Editor / OS
+# ==============================================================
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

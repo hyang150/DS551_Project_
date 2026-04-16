@@ -1,0 +1,29 @@
+# ============================================================
+#  Stock Market Analytics — Python dependencies
+#  DSCI 551 Course Project
+#
+#  Install:   pip install -r requirements.txt
+#  Or using uv:  uv sync  (reads pyproject.toml instead)
+# ============================================================
+
+# --- Core engines ---
+duckdb>=1.1.0
+sqlalchemy>=2.0.0
+pymysql>=1.1.0
+cryptography>=42.0.0         # Required by PyMySQL for MySQL 8 caching_sha2_password
+pymongo>=4.7.0               # MongoDB comparison (final report § 6)
+
+# --- Data ---
+pandas>=2.2.0
+pyarrow>=15.0.0              # Parquet I/O — DuckDB's native ingest
+yfinance>=0.2.50             # Yahoo Finance downloader (cached)
+
+# --- UI ---
+streamlit>=1.30.0            # dashboard.py
+plotly>=5.18.0               # Interactive charts
+
+# --- CLI rendering ---
+rich>=13.7.0                 # Pretty tables / panels in demo.py & main.py
+
+# --- Configuration ---
+python-dotenv>=1.0.0         # Load .env for MySQL / MongoDB credentials

@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import os
 import time
 import statistics
 import sys
@@ -31,6 +32,13 @@ from rich.table import Table
 from rich.rule import Rule
 from rich import box
 
+# ── Optional .env support ──
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 console = Console()
 
 # ── 路径配置 ──
@@ -38,12 +46,12 @@ PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR    = PROJECT_DIR / "data"
 DUCKDB_FILE = str(DATA_DIR / "stock_analytics.duckdb")  # setup_duckdb will create/overwrite
 
-# ── MySQL 配置 ──
-MYSQL_USER     = "root"
-MYSQL_PASSWORD = "password"
-MYSQL_HOST     = "127.0.0.1"
-MYSQL_PORT     = "3306"
-MYSQL_DB       = "stock_db"
+# ── MySQL 配置 — env var first, defaults as fallback ──
+MYSQL_USER     = os.getenv("MYSQL_USER",     "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
+MYSQL_HOST     = os.getenv("MYSQL_HOST",     "127.0.0.1")
+MYSQL_PORT     = os.getenv("MYSQL_PORT",     "3306")
+MYSQL_DB       = os.getenv("MYSQL_DB",       "stock_db")
 
 
 # ============================================================

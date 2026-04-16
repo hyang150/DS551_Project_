@@ -5,6 +5,7 @@ db_run.py — DuckDB vs MySQL 性能对比 Benchmark
 
 import csv
 import json
+import os
 import time
 import statistics
 import warnings
@@ -21,16 +22,25 @@ from sqlalchemy.types import String, Date, Float, BigInteger
 
 warnings.filterwarnings("ignore")
 
+# ── Optional .env support ──
+# If python-dotenv is installed and a .env file exists at project root,
+# auto-load MYSQL_* / MONGO_* variables. Safe no-op when either is missing.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 console = Console()
 
 # ============================================================
-#  MySQL 配置 — 按你本地 WSL 环境修改
+#  MySQL 配置 — 优先读环境变量，回退到本地默认
 # ============================================================
-MYSQL_USER     = "root"
-MYSQL_PASSWORD = "password"
-MYSQL_HOST     = "127.0.0.1"
-MYSQL_PORT     = "3306"
-MYSQL_DB       = "stock_db"
+MYSQL_USER     = os.getenv("MYSQL_USER",     "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
+MYSQL_HOST     = os.getenv("MYSQL_HOST",     "127.0.0.1")
+MYSQL_PORT     = os.getenv("MYSQL_PORT",     "3306")
+MYSQL_DB       = os.getenv("MYSQL_DB",       "stock_db")
 
 
 # ============================================================
@@ -230,8 +240,15 @@ def setup_mysql(df: pd.DataFrame):
         with root_engine.connect() as conn:
             conn.execute(text(f"CREATE DATABASE IF NOT EXISTS {MYSQL_DB}"))
     except Exception as e:
+        err_msg = str(e)
         console.print(f"[red][!] MySQL 连接失败: {e}[/red]")
-        console.print("[yellow]    请确认: sudo service mysql start[/yellow]")
+        if "cryptography" in err_msg:
+            console.print("[yellow]    → MySQL 8 auth 需要 cryptography 包:[/yellow]")
+            console.print("[yellow]      pip install cryptography   (或 uv add cryptography)[/yellow]")
+        elif "Access denied" in err_msg:
+            console.print("[yellow]    → 密码不对，编辑 .env 设置 MYSQL_PASSWORD[/yellow]")
+        else:
+            console.print("[yellow]    → 确认 MySQL 已启动: sudo service mysql start[/yellow]")
         return None
 
     engine = create_engine(
