@@ -151,6 +151,50 @@ BENCHMARK_QUERIES = {
             LIMIT 5000
         """,
     },
+    "Q7_point_lookup": {
+        "description": "Point Lookup — single row by Symbol + Date",
+        "focus": "OLTP — B-tree Index (MySQL advantage)",
+        "mapping": (
+            "DuckDB: No B-tree index; must scan column segments even for 1 row.\n"
+            "MySQL: B-tree index on (Symbol, Date) gives O(log n) direct access.\n"
+            "This shows row-based + B-tree excels at OLTP point queries."
+        ),
+        "sql": """
+            SELECT *
+            FROM stock_data
+            WHERE Symbol = 'AAPL' AND Date = '2023-06-15'
+        """,
+    },
+    "Q8_small_range": {
+        "description": "Small Range Scan — 1 month for 1 stock",
+        "focus": "OLTP — B-tree Range Scan (MySQL advantage)",
+        "mapping": (
+            "DuckDB: Scans row groups, uses zone maps to skip irrelevant groups.\n"
+            "MySQL: B-tree range scan on (Symbol, Date) reads only matching rows.\n"
+            "Small range scans favor indexed row-based storage."
+        ),
+        "sql": """
+            SELECT *
+            FROM stock_data
+            WHERE Symbol = 'AAPL'
+              AND Date BETWEEN '2023-01-01' AND '2023-01-31'
+        """,
+    },
+    "Q9_single_stock_filter": {
+        "description": "Single-stock full history filter",
+        "focus": "OLTP — Selective Filter (MySQL advantage)",
+        "mapping": (
+            "DuckDB: Scans all row groups for Symbol column, filters in batch.\n"
+            "MySQL: Uses index on Symbol to skip ~80% of rows (5-stock dataset).\n"
+            "Selective filters on indexed columns favor row-based storage."
+        ),
+        "sql": """
+            SELECT Date, Close, Volume
+            FROM stock_data
+            WHERE Symbol = 'AAPL'
+            ORDER BY Date
+        """,
+    },
 }
 
 
@@ -398,3 +442,126 @@ def save_results(results: list[dict], session_ts: str, output_dir: Path = Path.c
     console.print(f"    JSON (本次) → {json_path}")
 
     return csv_path, json_path
+
+
+# ============================================================
+#  存储大小对比
+# ============================================================
+def compare_storage_sizes(data_dir: Path, mysql_engine=None):
+    """Compare file sizes: Parquet vs CSV vs DuckDB vs MySQL InnoDB."""
+    console.print("\n[bold cyan]Storage Size Comparison[/bold cyan]")
+
+    table = Table(title="Storage Format Comparison", show_lines=True)
+    table.add_column("Format", style="bold")
+    table.add_column("Size", justify="right")
+    table.add_column("Notes")
+
+    # Parquet files
+    for p in sorted(data_dir.glob("*.parquet")):
+        size_kb = p.stat().st_size / 1024
+        table.add_row("Parquet", f"{size_kb:.1f} KB",
+                       f"{p.name} — columnar + compressed (Snappy)")
+
+    # CSV files
+    for p in sorted(data_dir.glob("*.csv")):
+        size_kb = p.stat().st_size / 1024
+        table.add_row("CSV", f"{size_kb:.1f} KB",
+                       f"{p.name} — plain text, no compression")
+
+    # DuckDB file
+    for p in sorted(data_dir.glob("*.duckdb")):
+        size_kb = p.stat().st_size / 1024
+        table.add_row("DuckDB", f"{size_kb:.1f} KB",
+                       f"{p.name} — columnar + per-column compression")
+
+    # MySQL InnoDB tablespace
+    if mysql_engine:
+        try:
+            result = pd.read_sql(
+                "SELECT ROUND(data_length/1024, 1) AS data_kb, "
+                "ROUND(index_length/1024, 1) AS index_kb "
+                "FROM information_schema.tables "
+                f"WHERE table_schema='{MYSQL_DB}' AND table_name='stock_data'",
+                mysql_engine,
+            )
+            if not result.empty:
+                data_kb = result.iloc[0]["data_kb"]
+                idx_kb = result.iloc[0]["index_kb"]
+                table.add_row("MySQL InnoDB Data", f"{data_kb} KB",
+                               "Row-based storage (B-tree clustered)")
+                table.add_row("MySQL InnoDB Index", f"{idx_kb} KB",
+                               "Secondary B-tree indexes")
+                table.add_row("MySQL Total", f"{data_kb + idx_kb} KB",
+                               "Data + indexes combined")
+        except Exception as e:
+            table.add_row("MySQL", "N/A", f"Error: {e}")
+
+    console.print(table)
+
+
+# ============================================================
+#  DuckDB JSON Profiling
+# ============================================================
+def run_json_profiling(con, query_ids: list[str] | None = None,
+                       output_dir: Path = Path.cwd() / "output"):
+    """Run DuckDB queries with JSON profiling to get operator-level timing."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    queries = BENCHMARK_QUERIES
+    if query_ids:
+        queries = {k: v for k, v in BENCHMARK_QUERIES.items() if k in query_ids}
+
+    console.print("\n[bold cyan]DuckDB JSON Profiling (operator-level timing)[/bold cyan]")
+
+    for qid, meta in queries.items():
+        sql = meta["sql"].strip()
+        profile_path = output_dir / f"profile_{qid}.json"
+
+        try:
+            con.execute("PRAGMA enable_profiling='json'")
+            con.execute(f"PRAGMA profile_output='{profile_path}'")
+            con.execute(sql).fetchall()
+            con.execute("PRAGMA disable_profiling")
+            console.print(f"  [green]✓[/green] {qid} → {profile_path.name}")
+        except Exception as e:
+            console.print(f"  [red]✗[/red] {qid}: {e}")
+
+    console.print(f"\n[green]Profiling output saved to {output_dir}/profile_*.json[/green]")
+    console.print("[dim]Open these JSON files to see per-operator timing breakdown.[/dim]")
+
+
+# ============================================================
+#  Scaling 实验 — 不同数据量的 speedup 对比
+# ============================================================
+def run_scaling_experiment(
+    duckdb_con, mysql_engine,
+    query_ids: list[str] | None = None,
+    n_runs: int = 5,
+) -> list[dict]:
+    """Run a single benchmark pass and return results for scaling comparison."""
+    queries = BENCHMARK_QUERIES
+    if query_ids:
+        queries = {k: v for k, v in BENCHMARK_QUERIES.items() if k in query_ids}
+
+    row_count = duckdb_con.execute("SELECT COUNT(*) FROM stock_data").fetchone()[0]
+    results = []
+
+    for qid, meta in queries.items():
+        sql = meta["sql"].strip()
+
+        _, duck_ms, _ = run_query(duckdb_con, sql, "duckdb", n_runs)
+        mysql_ms = -1.0
+        if mysql_engine:
+            _, mysql_ms, _ = run_query(mysql_engine, sql, "mysql", n_runs)
+
+        speedup = round(mysql_ms / duck_ms, 2) if duck_ms > 0 and mysql_ms > 0 else None
+
+        results.append({
+            "rows": row_count,
+            "query_id": qid,
+            "duckdb_ms": duck_ms,
+            "mysql_ms": mysql_ms,
+            "speedup": speedup,
+        })
+
+    return results
