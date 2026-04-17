@@ -80,25 +80,98 @@ def timed_query(con_or_engine, sql: str, db_type: str, n_runs: int = 5) -> tuple
 
 
 def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
-    """打印 DuckDB 和 MySQL 的 EXPLAIN 对比"""
-    console.print(f"\n[bold cyan]--- {title}: EXPLAIN ---[/bold cyan]")
+    """打印 DuckDB 和 MySQL 的 EXPLAIN ANALYZE 对比"""
+    console.print(f"\n[bold cyan]--- {title}: EXPLAIN ANALYZE ---[/bold cyan]")
 
-    # DuckDB EXPLAIN
-    console.print("\n[green]DuckDB EXPLAIN:[/green]")
+    # DuckDB — 先打印 plan 结构 (EXPLAIN)
+    console.print("\n[green]DuckDB Plan (EXPLAIN):[/green]")
     try:
-        plan = duck_con.execute(f"EXPLAIN {sql}").fetchdf()
-        console.print(plan.to_string(index=False))
+        rows = duck_con.execute(f"EXPLAIN {sql}").fetchall()
+        for row in rows:
+            # row = (explain_key, explain_value) — explain_value 是多行 plan 文本
+            console.print(row[-1])
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
-    # MySQL EXPLAIN
-    if mysql_engine:
-        console.print("\n[yellow]MySQL EXPLAIN:[/yellow]")
+    # DuckDB — 再用 JSON profiling 拿到微秒级单算子耗时
+    console.print("\n[green]DuckDB Per-Operator Timing (detailed profiling):[/green]")
+    import json as _json
+    import tempfile as _tempfile
+    profile_path = None
+    try:
+        # 写到临时文件而不是 stdout，避免一大坨 JSON 喷到屏幕；
+        # 也绕开老版本 DuckDB 没有 duckdb_profiling_output() 的问题
+        fd, profile_path = _tempfile.mkstemp(suffix=".json", prefix="duckprof_")
+        os.close(fd)
+        # DuckDB 在 Windows 上也要求正斜杠
+        profile_path_sql = profile_path.replace("\\", "/")
+
+        duck_con.execute("PRAGMA enable_profiling='json'")
+        duck_con.execute(f"PRAGMA profiling_output='{profile_path_sql}'")
         try:
-            plan = pd.read_sql(f"EXPLAIN {sql}", mysql_engine)
-            console.print(plan.to_string(index=False))
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
+            duck_con.execute("PRAGMA profiling_mode='detailed'")
+        except Exception:
+            pass  # 旧版本可能不支持 detailed mode
+
+        _ = duck_con.execute(sql).fetchall()  # 真正跑一遍以生成 profile 文件
+
+        with open(profile_path, "r", encoding="utf-8") as f:
+            profile = _json.load(f)
+
+        # 递归展平算子树
+        ops = []
+        def _walk(node):
+            if isinstance(node, dict) and "operator_name" in node:
+                ops.append({
+                    "operator":  node.get("operator_name"),
+                    "timing_ms": round(node.get("operator_timing", 0) * 1000, 4),
+                    "rows":      node.get("operator_cardinality", 0),
+                    "scanned":   node.get("operator_rows_scanned", 0),
+                })
+            for c in (node.get("children") or []) if isinstance(node, dict) else []:
+                _walk(c)
+        _walk(profile)
+
+        if ops:
+            df = pd.DataFrame(ops)
+            console.print(df.to_string(index=False))
+            total_ms = round(profile.get("latency", 0) * 1000, 4)
+            console.print(f"[dim]Total latency: {total_ms} ms[/dim]")
+        else:
+            console.print("[dim]profile empty[/dim]")
+    except Exception as e:
+        console.print(f"[red]Profiling error: {e}[/red]")
+    finally:
+        try:
+            duck_con.execute("PRAGMA disable_profiling")
+        except Exception:
+            pass
+        if profile_path and os.path.exists(profile_path):
+            try:
+                os.unlink(profile_path)
+            except Exception:
+                pass
+
+    # MySQL EXPLAIN ANALYZE (8.0.18+) — 返回树状文本；旧版本回退到 EXPLAIN FORMAT=TREE / EXPLAIN
+    if mysql_engine:
+        console.print("\n[yellow]MySQL EXPLAIN ANALYZE:[/yellow]")
+        from sqlalchemy import text
+        last_err = None
+        with mysql_engine.connect() as conn:
+            for stmt in (f"EXPLAIN ANALYZE {sql}",
+                         f"EXPLAIN FORMAT=TREE {sql}",
+                         f"EXPLAIN {sql}"):
+                try:
+                    result = conn.execute(text(stmt))
+                    for row in result.fetchall():
+                        # ANALYZE / FORMAT=TREE 单列文本；普通 EXPLAIN 多列
+                        console.print(" | ".join(str(c) for c in row))
+                    break
+                except Exception as e:
+                    last_err = e
+                    continue
+            else:
+                console.print(f"[red]Error: {last_err}[/red]")
 
 
 # ============================================================
@@ -451,11 +524,12 @@ def step5_summary(duck_con, mysql_engine, n_runs: int):
 def step6_explain(duck_con, mysql_engine):
     console.print(Rule("[bold] Step 6: EXPLAIN ANALYZE — Execution Plan Comparison [/bold]", style="green"))
 
-    console.print(
+    console.print(Panel(
         "[bold]Showing execution plans to verify internal behavior:[/bold]\n"
         "  DuckDB: SEQ_SCAN with column pruning, STREAMING_WINDOW, HASH_GROUP_BY\n"
-        "  MySQL:  Full table scan, Using temporary, Using filesort\n"
-    )
+        "  MySQL:  Full table scan, Using temporary, Using filesort\n",
+        border_style="cyan", expand=False,
+    ))
 
     demos = [
         ("Narrow Scan (Column Pruning)", Q_NARROW),
