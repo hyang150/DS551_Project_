@@ -213,7 +213,7 @@ BENCHMARK_QUERIES = {
 # ============================================================
 def setup_duckdb(df: pd.DataFrame, duckdb_file: str) -> duckdb.DuckDBPyConnection:
     """初始化 DuckDB，建表 + 索引"""
-    console.print(f"\n[cyan][*] 初始化 DuckDB ({duckdb_file})...[/cyan]")
+    console.print(f"\n[cyan][*] Initializing DuckDB ({duckdb_file})...[/cyan]")
     t0 = time.perf_counter()
 
     con = duckdb.connect(duckdb_file)
@@ -224,13 +224,13 @@ def setup_duckdb(df: pd.DataFrame, duckdb_file: str) -> duckdb.DuckDBPyConnectio
 
     count = con.execute("SELECT COUNT(*) FROM stock_data").fetchone()[0]
     elapsed = time.perf_counter() - t0
-    console.print(f"[green][+] DuckDB 就绪: {count} 行, 导入耗时 {elapsed:.3f}s[/green]")
+    console.print(f"[green][+] DuckDB ready: {count:,} rows, load time {elapsed:.3f}s[/green]")
     return con
 
 
 def setup_mysql(df: pd.DataFrame):
     """初始化 MySQL，建表 + 索引（保证公平对比）"""
-    console.print(f"\n[cyan][*] 连接 WSL MySQL ({MYSQL_HOST}:{MYSQL_PORT})...[/cyan]")
+    console.print(f"\n[cyan][*] Connecting to WSL MySQL ({MYSQL_HOST}:{MYSQL_PORT})...[/cyan]")
 
     try:
         root_engine = create_engine(
@@ -280,7 +280,7 @@ def setup_mysql(df: pd.DataFrame):
             conn.commit()
 
         elapsed = time.perf_counter() - t0
-        console.print(f"[green][+] MySQL 就绪 (含索引), 导入耗时 {elapsed:.3f}s[/green]")
+        console.print(f"[green][+] MySQL ready (with indexes), load time {elapsed:.3f}s[/green]")
     except Exception as e:
         console.print(f"[red][!] MySQL 写入失败: {e}[/red]")
         return None

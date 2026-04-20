@@ -57,7 +57,7 @@ MYSQL_DB       = os.getenv("MYSQL_DB",       "stock_db")
 # ============================================================
 #  工具函数
 # ============================================================
-def pause(msg: str = "按 Enter 继续下一步..."):
+def pause(msg: str = "Press Enter to continue..."):
     """演示暂停点，让 presenter 控制节奏"""
     console.print(f"\n[dim italic]  >>> {msg}[/dim italic]")
     input()
@@ -79,17 +79,125 @@ def timed_query(con_or_engine, sql: str, db_type: str, n_runs: int = 5) -> tuple
     return last_df, median_ms, times
 
 
+# ── DuckDB EXPLAIN 精简: 只保留关键算子, 过滤 PROJECTION / 内部 (de)compress 噪声 ──
+_KEY_DUCKDB_OPS = {
+    "SEQ_SCAN", "HASH_GROUP_BY", "PERFECT_HASH_GROUP_BY",
+    "WINDOW", "STREAMING_WINDOW", "UNGROUPED_AGGREGATE",
+    "TOP_N", "ORDER_BY", "FILTER", "HASH_JOIN", "MERGE_JOIN",
+    "NESTED_LOOP_JOIN", "LIMIT",
+}
+
+
+def _parse_duckdb_plan(plan_text: str):
+    """解析 DuckDB EXPLAIN 的 ASCII 树 → [(op_name, {field: [values]}), ...]"""
+    import re
+    blocks, current = [], None
+    for raw in plan_text.split("\n"):
+        line = raw.rstrip()
+        if not line:
+            continue
+        if "┌" in line:
+            if current:
+                blocks.append(current)
+            current = {"op": None, "fields": {}, "cur_field": None}
+            continue
+        if "└" in line:
+            if current:
+                blocks.append(current)
+            current = None
+            continue
+        if current is None or "│" not in line:
+            continue
+        m = re.match(r".*?│(.*?)│.*", line)
+        if not m:
+            continue
+        content = m.group(1).strip()
+        if not content or re.match(r"^─+$", content):
+            continue
+        if current["op"] is None:
+            current["op"] = content
+            continue
+        # inline field: "Type: Sequential Scan"
+        m2 = re.match(r"^([A-Za-z _]+):\s+(.+)$", content)
+        if m2:
+            current["fields"].setdefault(m2.group(1).strip(), []).append(m2.group(2).strip())
+            current["cur_field"] = None
+            continue
+        # 开始多行 field: "Projections:"
+        if content.endswith(":"):
+            current["cur_field"] = content.rstrip(":").strip()
+            current["fields"].setdefault(current["cur_field"], [])
+            continue
+        # value 行 — 跳过内部 (de)compress 和 "~12,580 rows" 这类统计
+        if current["cur_field"] and "__internal" not in content and not content.startswith("~"):
+            current["fields"][current["cur_field"]].append(content)
+    if current:
+        blocks.append(current)
+    return [(b["op"], b["fields"]) for b in blocks if b["op"]]
+
+
+def _format_op(op: str, fields: dict) -> str:
+    def _join(vals, maxn=6):
+        if not vals:
+            return "[]"
+        if len(vals) > maxn:
+            return f"[{len(vals)} cols]"
+        return f"[{', '.join(vals)}]"
+
+    if op == "SEQ_SCAN":
+        return f"SEQ_SCAN  cols={_join(fields.get('Projections', []))}"
+    if op in ("HASH_GROUP_BY", "PERFECT_HASH_GROUP_BY"):
+        parts = [op]
+        if fields.get("Groups"):
+            parts.append(f"groups={_join(fields['Groups'])}")
+        if fields.get("Aggregates"):
+            parts.append(f"aggs={_join(fields['Aggregates'])}")
+        return "  ".join(parts)
+    if op == "UNGROUPED_AGGREGATE":
+        return f"UNGROUPED_AGGREGATE  aggs={_join(fields.get('Aggregates', []))}"
+    if op in ("WINDOW", "STREAMING_WINDOW"):
+        expr = " ".join(fields.get("Projections", []))
+        if len(expr) > 80:
+            expr = expr[:77] + "..."
+        return f"{op}  {expr}" if expr else op
+    if op == "TOP_N":
+        parts = [op]
+        if fields.get("Top"):
+            parts.append(f"top={fields['Top'][0]}")
+        return "  ".join(parts)
+    if op == "ORDER_BY":
+        raw = " ".join(v for vs in fields.values() for v in vs)
+        raw = raw.replace("stock_analytics.main.stock_data.", "")
+        raw = raw.replace("stock_analytics.main", "").strip(" .")
+        if len(raw) > 60:
+            raw = raw[:57] + "..."
+        return f"ORDER_BY  {raw}" if raw else "ORDER_BY"
+    return op
+
+
+def _summarize_duckdb_plan(plan_text: str) -> str:
+    """EXPLAIN 树 → 压缩后的 pipeline (leaf→root)"""
+    blocks = _parse_duckdb_plan(plan_text)
+    key_blocks = [(op, f) for (op, f) in blocks if op in _KEY_DUCKDB_OPS]
+    if not key_blocks:
+        # 解析失败时回退到原始前 15 行
+        head = "\n".join(plan_text.split("\n")[:15])
+        return head + "\n[dim]...(truncated)[/dim]"
+    lines = [_format_op(op, f) for (op, f) in key_blocks]
+    lines.reverse()  # DuckDB EXPLAIN 是根→叶, 翻转更符合数据流
+    return "\n  [dim]↓[/dim]\n".join(f"  [bold green]{l}[/bold green]" for l in lines)
+
+
 def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
     """打印 DuckDB 和 MySQL 的 EXPLAIN ANALYZE 对比"""
     console.print(f"\n[bold cyan]--- {title}: EXPLAIN ANALYZE ---[/bold cyan]")
 
-    # DuckDB — 先打印 plan 结构 (EXPLAIN)
-    console.print("\n[green]DuckDB Plan (EXPLAIN):[/green]")
+    # DuckDB — 只展示关键算子 pipeline, 过滤 PROJECTION 等噪声
+    console.print("\n[green]DuckDB Plan (key operators, leaf→root):[/green]")
     try:
         rows = duck_con.execute(f"EXPLAIN {sql}").fetchall()
-        for row in rows:
-            # row = (explain_key, explain_value) — explain_value 是多行 plan 文本
-            console.print(row[-1])
+        plan_text = "\n".join(str(row[-1]) for row in rows)
+        console.print(_summarize_duckdb_plan(plan_text))
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 

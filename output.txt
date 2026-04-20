@@ -1,0 +1,323 @@
+───────────────────────────────────────────────────────────────  DSCI 551 Final Project Demo  ───────────────────────────────────────────────────────────────
+╭──────────────────────────── Project Overview ─────────────────────────────╮
+│ Stock Market Analytics with DuckDB                                        │
+│ A Study of Columnar Storage and Vectorized Execution                      │
+│                                                                           │
+│ Members: Hanwen Yang, Jialiang Lou                                        │
+│                                                                           │
+│ Project Goals:                                                            │
+│   1. Analyze DuckDB internals: columnar storage + vectorized execution    │
+│   2. Build a stock analytics app that leverages these internals           │
+│   3. Compare with MySQL (row-based + tuple-at-a-time) to show differences │
+╰───────────────────────────────────────────────────────────────────────────╯
+
+Demo Outline:
+  Step 1 → Data loading & schema
+  Step 2 → Columnar Storage: Narrow vs Wide scan
+  Step 3 → Vectorized Execution: Window functions & aggregation
+  Step 4 → OLTP queries: Where MySQL shines
+  Step 5 → Full benchmark summary
+  Step 6 → EXPLAIN ANALYZE comparison
+
+
+  >>> Press Enter to start Step 1: Data Loading...
+Downloading / loading data...
+[+] 读取本地缓存: 5stocks_2015_2025.parquet
+    共 12580 行, 5 只股票
+Loaded 12,580 rows, 5 stocks
+
+[*] 初始化 DuckDB (/home/hyang150/ds551/project/data/stock_analytics.duckdb)...
+[+] DuckDB 就绪: 12580 行, 导入耗时 0.068s
+
+[*] 连接 WSL MySQL (127.0.0.1:3306)...
+[+] MySQL 就绪 (含索引), 导入耗时 1.578s
+──────────────────────────────────────────────────────────────  Step 1: Data Loading & Schema  ──────────────────────────────────────────────────────────────
+╭─────────────────────────── Dataset ───────────────────────────╮
+│ Table: stock_data                                             │
+│ Schema: (Date DATE, Symbol VARCHAR, Open DOUBLE, High DOUBLE, │
+│          Low DOUBLE, Close DOUBLE, Volume BIGINT) — 7 columns │
+│                                                               │
+│ Rows:     12,580                                              │
+│ Stocks:   5                                                   │
+│ Period:   2015-01-02 → 2024-12-31                             │
+│                                                               │
+│ Data source: Yahoo Finance (OHLCV daily)                      │
+│ DuckDB:  embedded in-process, columnar storage                │
+│ MySQL:   row-based InnoDB, composite index on (Symbol, Date)  │
+╰───────────────────────────────────────────────────────────────╯
+
+Sample data (AAPL, most recent):
+      Date Symbol       Open       High        Low      Close   Volume
+2024-12-31   AAPL 251.068493 251.903926 248.074837 249.059464 39480700
+2024-12-30   AAPL 250.859609 252.122713 249.387654 250.829773 35557500
+2024-12-27   AAPL 256.429175 257.294474 251.685102 254.201355 42355300
+2024-12-26   AAPL 256.787255 258.686881 256.230300 257.612732 27237100
+2024-12-24   AAPL 254.101958 256.807166 253.903032 256.797241 23234700
+
+  >>> Press Enter for Step 2: Columnar Storage...
+─────────────────────────────────────────────────────  Step 2: Columnar Storage — Narrow vs Wide Scan  ──────────────────────────────────────────────────────
+╭───────────────────────────────────────────────────────────────────────────────────╮
+│ Key Insight: DuckDB stores data column-by-column.                                 │
+│ When a query only needs 2-3 of 7 columns, DuckDB skips the rest → less I/O.       │
+│ MySQL stores data row-by-row → must read all 7 columns even if only 2 are needed. │
+╰───────────────────────────────────────────────────────────────────────────────────╯
+
+Query A: Narrow Scan — reads only Close + Volume (2/7 cols)
+SELECT COUNT(*), ROUND(AVG(Close), 4), SUM(Volume)
+    FROM stock_data
+
+Query B: Wide Scan — reads all 7 columns (SELECT *)
+SELECT * FROM stock_data ORDER BY Date DESC LIMIT 5000
+                   Columnar Storage: Narrow vs Wide                   
+╭───────────────────┬───────────┬─────────────┬────────────┬─────────╮
+│ Query             │ Cols Read │ DuckDB (ms) │ MySQL (ms) │ Speedup │
+├───────────────────┼───────────┼─────────────┼────────────┼─────────┤
+│ Narrow (AVG, SUM) │ 2 / 7     │         1.3 │       10.6 │    8.0x │
+├───────────────────┼───────────┼─────────────┼────────────┼─────────┤
+│ Wide (SELECT *)   │ 7 / 7     │         6.8 │       62.5 │    9.1x │
+╰───────────────────┴───────────┴─────────────┴────────────┴─────────╯
+
+Takeaway: DuckDB's narrow scan is much faster because columnar storage
+only reads the needed columns. The advantage shrinks on SELECT * (wide scan)
+because all columns must be read and reconstructed into rows.
+
+Bonus: Daily Volatility — reads High, Low, Close (3/7 cols)
+  DuckDB: 3.9 ms
+      Date Symbol  daily_volatility_pct
+2017-06-09   NVDA               17.2126
+2020-03-16   NVDA               16.3442
+2015-08-24   AAPL               16.2917
+2018-10-29   NVDA               15.1492
+2020-03-18   NVDA               14.4266
+
+  >>> Press Enter for Step 3: Vectorized Execution...
+───────────────────────────────────────────────────  Step 3: Vectorized Execution — Window & Aggregation  ───────────────────────────────────────────────────
+╭──────────────────────────────────────────────────────────────────────────────────╮
+│ Key Insight: DuckDB processes data in batches of 2048 tuples.                    │
+│ Window functions and aggregations run on entire vectors at once → SIMD-friendly. │
+│ MySQL processes one tuple at a time → higher function call overhead.             │
+╰──────────────────────────────────────────────────────────────────────────────────╯
+
+50-Day Moving Avg (Window)
+SELECT Date, Symbol, Close,
+           AVG(Close) OVER (
+               PARTITION BY Symbol ORDER BY Date
+              ...
+      Date Symbol      Close      MA_50
+2024-12-31   AMZN 219.389999 209.845200
+2024-12-31   MSFT 417.460602 424.059742
+2024-12-31   NVDA 134.246017 139.838329
+
+20-Day Rolling StdDev (Window)
+SELECT Date, Symbol, Close,
+           ROUND(STDDEV(Close) OVER (
+               PARTITION BY Symbol ORDER BY Date
+     ...
+      Date Symbol      Close  rolling_std_20
+2024-12-31   NVDA 134.246017          4.6088
+2024-12-31   MSFT 417.460602          8.6066
+2024-12-31   AAPL 249.059464          5.0364
+
+Annual Summary (GROUP BY)
+SELECT YEAR(Date) AS Year, Symbol,
+           ROUND(AVG(Close), 2)  AS avg_close,
+           ROUND(MAX(High), 2)   AS ye...
+ Year Symbol  avg_close  year_high  year_low  total_volume
+ 2015   AAPL      26.82      29.92     20.64  5.226420e+10
+ 2015   AMZN      23.91      34.82     14.26  1.914204e+10
+ 2015  GOOGL      30.75      39.61     24.34  1.093588e+10
+                              Vectorized Execution Benchmark                              
+╭────────────────────────────────┬──────────────────┬─────────────┬────────────┬─────────╮
+│ Query                          │ DuckDB Operator  │ DuckDB (ms) │ MySQL (ms) │ Speedup │
+├────────────────────────────────┼──────────────────┼─────────────┼────────────┼─────────┤
+│ 50-Day Moving Avg (Window)     │ STREAMING_WINDOW │         6.0 │      410.2 │   68.3x │
+├────────────────────────────────┼──────────────────┼─────────────┼────────────┼─────────┤
+│ 20-Day Rolling StdDev (Window) │ STREAMING_WINDOW │         6.7 │      236.3 │   35.1x │
+├────────────────────────────────┼──────────────────┼─────────────┼────────────┼─────────┤
+│ Annual Summary (GROUP BY)      │ HASH_GROUP_BY    │         4.9 │       55.7 │   11.4x │
+╰────────────────────────────────┴──────────────────┴─────────────┴────────────┴─────────╯
+
+Takeaway: Window functions show the largest speedup because DuckDB's
+STREAMING_WINDOW operator processes entire chunks without materializing
+intermediate results, while MySQL uses temporary tables + filesort.
+
+  >>> Press Enter for Step 4: OLTP Queries...
+────────────────────────────────────────────────────────  Step 4: OLTP Queries — Where MySQL Shines  ────────────────────────────────────────────────────────
+╭───────────────────────────────────────────────────────────────────────╮
+│ Key Insight: Row-based storage excels at point lookups.               │
+│ MySQL can use its B-tree index on (Symbol, Date) to find a single row │
+│ without scanning any other data. DuckDB must scan column segments.    │
+╰───────────────────────────────────────────────────────────────────────╯
+
+Point Lookup (1 row)
+SELECT * FROM stock_data
+    WHERE Symbol = 'AAPL' AND Date = '2023-06-15'
+      Date Symbol       Open       High        Low      Close   Volume
+2023-06-15   AAPL 181.583807 184.110737 181.406124 183.607315 65433200
+
+Small Range Scan (1 month)
+SELECT * FROM stock_data
+    WHERE Symbol = 'AAPL' AND Date BETWEEN '2023-01-01' AND '2023-01-31'
+      Date Symbol       Open       High        Low      Close    Volume
+2023-01-03   AAPL 128.223785 128.833995 122.210219 123.096016 112117500
+2023-01-04   AAPL 124.887311 126.629379 123.105880 124.365677  89113600
+2023-01-05   AAPL 125.123505 125.753403 122.790915 123.046806  80962700
+2023-01-06   AAPL 124.021202 128.233642 122.918876 127.574219  87754700
+2023-01-09   AAPL 128.410797 131.304398 127.839949 128.095840  70790800
+2023-01-10   AAPL 128.204149 129.188367 126.097925 128.666733  63896200
+2023-01-11   AAPL 129.178511 131.402837 128.400986 131.383163  69458900
+2023-01-12   AAPL 131.766981 132.140973 129.365489 131.304398  71379600
+2023-01-13   AAPL 129.946179 132.790565 129.582023 132.633087  57809700
+2023-01-17   AAPL 132.701952 135.123117 132.013004 133.794434  63646600
+2023-01-18   AAPL 134.660594 136.422336 132.898837 133.076004  69672800
+2023-01-19   AAPL 131.963805 134.099553 131.658700 133.135025  58280400
+2023-01-20   AAPL 133.144882 135.841642 132.101614 135.694000  80223600
+2023-01-23   AAPL 135.940044 141.057984 135.723515 138.882858  81760300
+2023-01-24   AAPL 138.095508 140.900533 138.085672 140.280472  66435100
+2023-01-25   AAPL 138.666326 140.182013 136.619153 139.621017  65799300
+2023-01-26   AAPL 140.910326 141.973282 139.660367 141.687866  54105100
+2023-01-27   AAPL 140.900515 144.906270 140.821776 143.626785  70555800
+2023-01-30   AAPL 142.672099 143.252783 140.595400 140.743027  64015300
+2023-01-31   AAPL 140.447763 142.061879 140.034394 142.012665  65874500
+                 OLTP: Point Lookup & Range Scan                  
+╭────────────────────────────┬─────────────┬────────────┬────────╮
+│ Query                      │ DuckDB (ms) │ MySQL (ms) │ Winner │
+├────────────────────────────┼─────────────┼────────────┼────────┤
+│ Point Lookup (1 row)       │         1.5 │        2.5 │ DuckDB │
+├────────────────────────────┼─────────────┼────────────┼────────┤
+│ Small Range Scan (1 month) │         1.5 │        2.7 │ DuckDB │
+╰────────────────────────────┴─────────────┴────────────┴────────╯
+
+Takeaway: For point lookups and small range scans, MySQL's B-tree
+index provides direct access. This demonstrates that columnar storage is
+optimized for OLAP, not OLTP workloads — each architecture has its strengths.
+
+  >>> Press Enter for Step 5: Full Benchmark...
+─────────────────────────────────────────────────────────────  Step 5: Full Benchmark Summary  ──────────────────────────────────────────────────────────────
+                              Complete Benchmark: DuckDB vs MySQL                              
+╔════════════════════════╤════════════════════════╤══════╤═════════════╤════════════╤═════════╗
+║ Query                  │ Focus                  │ Cols │ DuckDB (ms) │ MySQL (ms) │ Speedup ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q1: 50-Day MA          │ Vectorized Window      │ 3/7  │         5.8 │      396.7 │   68.2x ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q2: Daily Volatility   │ Column Pruning         │ 3/7  │         3.9 │       19.0 │    4.8x ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q3: Annual Summary     │ Vectorized Aggregation │ 4/7  │         4.3 │       43.5 │   10.1x ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q4: Narrow Aggregate   │ Narrow Columnar I/O    │ 2/7  │         1.4 │       16.3 │   11.5x ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q5: Rolling StdDev     │ Vec. Window + StdDev   │ 3/7  │         6.4 │      235.5 │   36.5x ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q6: Wide SELECT *      │ Wide Scan (control)    │ 7/7  │         6.1 │       64.0 │   10.4x ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q7: Point Lookup       │ OLTP (MySQL advantage) │ 7/7  │         1.4 │        2.3 │    1.7x ║
+╟────────────────────────┼────────────────────────┼──────┼─────────────┼────────────┼─────────╢
+║ Q8: Small Range Scan   │ OLTP (MySQL advantage) │ 7/7  │         1.5 │        2.8 │    1.8x ║
+╚════════════════════════╧════════════════════════╧══════╧═════════════╧════════════╧═════════╝
+╭───────────────────────────────────────────────────────────────────────╮
+│ Summary:                                                              │
+│   • OLAP queries (Q1-Q5): DuckDB is significantly faster              │
+│     — Columnar storage reduces I/O for narrow projections             │
+│     — Vectorized execution accelerates window functions & aggregation │
+│   • Wide scan (Q6): DuckDB advantage shrinks (must reconstruct rows)  │
+│   • OLTP queries (Q7-Q8): MySQL can be competitive or faster          │
+│     — B-tree index gives direct row access                            │
+│     — Row-based storage avoids tuple reconstruction overhead          │
+╰───────────────────────────────────────────────────────────────────────╯
+
+  >>> Press Enter for Step 6: EXPLAIN ANALYZE...
+──────────────────────────────────────────────────────────────  Step 6: EXPLAIN ANALYZE — Execution Plan Comparison  ──────────────────────────────────────────────────────────────
+Showing execution plans to verify internal behavior:
+  DuckDB: SEQ_SCAN with column pruning, STREAMING_WINDOW, HASH_GROUP_BY
+  MySQL:  Full table scan, Using temporary, Using filesort
+
+
+--- Narrow Scan (Column Pruning): EXPLAIN ---
+
+DuckDB EXPLAIN:
+  explain_key                                                                                                                                                                      
+explain_value
+physical_plan ┌───────────────────────────┐\n│         PROJECTION        │\n│    ────────────────────   │\n│        count_star()       │\n│    round(avg(Close), 4)   │\n│        
+sum(Volume)        │\n│                           │\n│           ~1 row          │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│    UNGROUPED_AGGREGATE    │\n│ 
+────────────────────   │\n│        Aggregates:        │\n│        count_star()       │\n│          avg(#0)          │\n│    sum_no_overflow(#1)    
+│\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│         PROJECTION        │\n│    ────────────────────   │\n│           Close           │\n│           Volume   
+│\n│                           │\n│        ~12,580 rows       │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│          SEQ_SCAN         │\n│    
+────────────────────   │\n│           Table:          │\n│    stock_analytics.main   │\n│        .stock_data        │\n│                           │\n│   Type: Sequential Scan   
+│\n│                           │\n│        Projections:       │\n│           Close           │\n│           Volume          │\n│                           │\n│        ~12,580 rows
+│\n└───────────────────────────┘\n
+
+MySQL EXPLAIN:
+ id select_type      table partitions type possible_keys  key key_len  ref  rows  filtered Extra
+  1      SIMPLE stock_data       None  ALL          None None    None None 12580     100.0  None
+
+  >>> 按 Enter 继续下一步...
+
+--- Window Function (Vectorized): EXPLAIN ---
+
+DuckDB EXPLAIN:
+  explain_key                                                                                                                                                                      
+explain_value
+physical_plan ┌───────────────────────────┐\n│           TOP_N           │\n│    ────────────────────   │\n│          Top: 100         │\n│                           │\n│         
+Order By:         │\n│    stock_analytics.main   │\n│   .stock_data.Date DESC   │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│         PROJECTION        │\n│  
+────────────────────   │\n│             #0            │\n│             #1            │\n│             #2            │\n│             #3            │\n│                           
+│\n│        ~12,580 rows       │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│           WINDOW          │\n│    ────────────────────   │\n│        Projections:
+│\n│ avg(Close) OVER (PARTITION│\n│   BY Symbol ORDER BY Date │\n│     ASC NULLS LAST ROWS   │\n│  BETWEEN 49 PRECEDING AND │\n│        CURRENT ROW)       
+│\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│          SEQ_SCAN         │\n│    ────────────────────   │\n│           Table:          │\n│    
+stock_analytics.main   │\n│        .stock_data        │\n│                           │\n│   Type: Sequential Scan   │\n│                           │\n│        Projections:       
+│\n│            Date           │\n│           Symbol          │\n│           Close           │\n│                           │\n│        ~12,580 rows       
+│\n└───────────────────────────┘\n
+
+MySQL EXPLAIN:
+ id select_type      table partitions type possible_keys  key key_len  ref  rows  filtered          Extra
+  1      SIMPLE stock_data       None  ALL          None None    None None 12580     100.0 Using filesort
+
+  >>> 按 Enter 继续下一步...
+
+--- Aggregation (Hash Group By): EXPLAIN ---
+
+DuckDB EXPLAIN:
+  explain_key                                                                                                                                                                      
+explain_value
+physical_plan ┌───────────────────────────┐\n│         PROJECTION        │\n│    ────────────────────   │\n│__internal_decompress_integ│\n│    ral_bigint(#0, 2015)   
+│\n│__internal_decompress_strin│\n│           g(#1)           │\n│             #2            │\n│             #3            │\n│             #4            │\n│             #5     
+│\n│                           │\n│          ~0 rows          │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│          ORDER_BY         │\n│    
+────────────────────   │\n│   "year"(stock_analytics  │\n│ .main.stock_data.Date) ASC│\n│    stock_analytics.main   │\n│   .stock_data.Symbol ASC  
+│\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│         PROJECTION        │\n│    ────────────────────   │\n│__internal_compress_integra│\n│    l_utinyint(#0, 
+2015)   │\n│__internal_compress_string_│\n│        ubigint(#1)        │\n│             #2            │\n│             #3            │\n│             #4            │\n│            
+#5            │\n│                           │\n│          ~4 rows          │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│         PROJECTION        │\n│    
+────────────────────   │\n│            Year           │\n│           Symbol          │\n│         avg_close         │\n│         year_high         │\n│          year_low         
+│\n│        total_volume       │\n│                           │\n│          ~4 rows          │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│         PROJECTION 
+│\n│    ────────────────────   │\n│__internal_decompress_integ│\n│    ral_bigint(#0, 2015)   │\n│__internal_decompress_strin│\n│           g(#1)           │\n│             #2     
+│\n│             #3            │\n│             #4            │\n│             #5            │\n│                           │\n│          ~4 rows          
+│\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│       HASH_GROUP_BY       │\n│    ────────────────────   │\n│          Groups:          │\n│             #0     
+│\n│             #1            │\n│                           │\n│        Aggregates:        │\n│          avg(#2)          │\n│          max(#3)          │\n│          min(#4)   
+│\n│    sum_no_overflow(#5)    │\n│                           │\n│          ~4 rows          │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│         PROJECTION 
+│\n│    ────────────────────   │\n│__internal_compress_integra│\n│  l_utinyint("year"(Date), │\n│            2015)          │\n│           Symbol          │\n│           Close    
+│\n│            High           │\n│            Low            │\n│           Volume          │\n│                           │\n│        ~12,580 rows       
+│\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│         PROJECTION        │\n│    ────────────────────   │\n│             #0            
+│\n│__internal_compress_string_│\n│        ubigint(#1)        │\n│             #2            │\n│             #3            │\n│             #4            │\n│             #5     
+│\n│                           │\n│        ~12,580 rows       │\n└─────────────┬─────────────┘\n┌─────────────┴─────────────┐\n│          SEQ_SCAN         │\n│    
+────────────────────   │\n│           Table:          │\n│    stock_analytics.main   │\n│        .stock_data        │\n│                           │\n│   Type: Sequential Scan   
+│\n│                           │\n│        Projections:       │\n│            Date           │\n│           Symbol          │\n│           Close           │\n│            High    
+│\n│            Low            │\n│           Volume          │\n│                           │\n│        ~12,580 rows       │\n└───────────────────────────┘\n
+
+MySQL EXPLAIN:
+ id select_type      table partitions type possible_keys  key key_len  ref  rows  filtered                           Extra
+  1      SIMPLE stock_data       None  ALL  idx_sym_date None    None None 12580     100.0 Using temporary; Using filesort
+
+  >>> 按 Enter 继续下一步...
+──────────────────────────────────────────────────────────────────────────────────  Thank You!  ───────────────────────────────────────────────────────────────────────────────────
+╭──────────────────────────── Conclusion ────────────────────────────╮
+│ Key Takeaways:                                                     │
+│                                                                    │
+│ 1. Columnar Storage → reads only needed columns                    │
+│    DuckDB scans 2-3 of 7 cols, MySQL reads entire rows             │
+│                                                                    │
+│ 2. Vectorized Execution → processes 2048 tuples per batch          │
+│    Window functions see 5-30x speedup over MySQL's tuple-at-a-time │
+│                                                                    │
+│ 3. Trade-off → Row-based storage better for OLTP point lookups     │
+│    Each architecture suits different workload types                │
+│                                                                    │
+│ Database: DuckDB | Application: Stock Market Analytics Dashboard   │
+╰────────────────────────────────────────────────────────────────────╯

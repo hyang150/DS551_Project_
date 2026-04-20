@@ -60,12 +60,12 @@ def fetch_stock_data(
 
     # 命中缓存
     if parquet_path.exists():
-        console.print(f"[green][+] 读取本地缓存: {parquet_path.name}[/green]")
+        console.print(f"[green][+] Loaded from local cache: {parquet_path.name}[/green]")
         df = pd.read_parquet(parquet_path)
-        console.print(f"    共 {len(df)} 行, {df['Symbol'].nunique()} 只股票")
+        console.print(f"    {len(df):,} rows, {df['Symbol'].nunique()} stocks")
         return df
 
-    console.print(f"[cyan][*] 从 Yahoo Finance 下载 {len(symbols)} 只股票 ({start} ~ {end})...[/cyan]")
+    console.print(f"[cyan][*] Downloading {len(symbols)} stocks from Yahoo Finance ({start} ~ {end})...[/cyan]")
 
     frames = []
     failed = []
@@ -82,13 +82,13 @@ def fetch_stock_data(
             df = df[["Date", "Symbol", "Open", "High", "Low", "Close", "Volume"]]
             df["Date"] = pd.to_datetime(df["Date"]).dt.date
             frames.append(df)
-            console.print(f"  [green]✓[/green] {sym}: {len(df)} 行")
+            console.print(f"  [green]✓[/green] {sym}: {len(df)} rows")
         except Exception as e:
             console.print(f"  [red]✗[/red] {sym}: {e}")
             failed.append(sym)
 
     if not frames:
-        raise RuntimeError("所有股票下载失败，请检查网络连接")
+        raise RuntimeError("All downloads failed — check network connection")
 
     combined = pd.concat(frames, ignore_index=True)
     combined.sort_values(["Symbol", "Date"], inplace=True)
@@ -97,11 +97,11 @@ def fetch_stock_data(
     combined.to_parquet(parquet_path, index=False)
     combined.to_csv(csv_path, index=False)
 
-    console.print(f"\n[green][+] 数据已保存 (共 {len(combined)} 行, {combined['Symbol'].nunique()} 只股票)[/green]")
+    console.print(f"\n[green][+] Data saved ({len(combined):,} rows, {combined['Symbol'].nunique()} stocks)[/green]")
     console.print(f"    Parquet → {parquet_path.name}")
     console.print(f"    CSV     → {csv_path.name}")
 
     if failed:
-        console.print(f"[yellow]    跳过失败: {failed}[/yellow]")
+        console.print(f"[yellow]    Skipped failures: {failed}[/yellow]")
 
     return combined
