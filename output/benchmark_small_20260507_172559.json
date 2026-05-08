@@ -1,0 +1,254 @@
+[
+  {
+    "session": "20260507_172559",
+    "query_id": "Q1_50day_MA",
+    "description": "50\u65e5\u5747\u7ebf (Window Function)",
+    "focus": "Vectorized Execution",
+    "duckdb_median_ms": 4.304,
+    "duckdb_all_ms": [
+      6.925,
+      5.058,
+      4.001,
+      4.419,
+      4.866,
+      4.189,
+      3.546
+    ],
+    "mysql_median_ms": 79.346,
+    "mysql_all_ms": [
+      80.41,
+      78.547,
+      80.678,
+      79.168,
+      79.524,
+      82.685,
+      78.602
+    ],
+    "speedup": "18.4x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q2_daily_volatility",
+    "description": "\u6bcf\u65e5\u6ce2\u52a8\u7387 \u2014 Narrow Projection (\u53ea\u8bfb 3 \u5217)",
+    "focus": "Columnar Storage \u2014 Column Pruning",
+    "duckdb_median_ms": 1.269,
+    "duckdb_all_ms": [
+      2.184,
+      1.284,
+      1.42,
+      1.163,
+      1.354,
+      1.09,
+      1.254
+    ],
+    "mysql_median_ms": 4.995,
+    "mysql_all_ms": [
+      5.143,
+      4.915,
+      5.075,
+      5.802,
+      4.761,
+      5.437,
+      4.741
+    ],
+    "speedup": "3.9x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q3_annual_summary",
+    "description": "\u5e74\u5ea6\u6c47\u603b\u7edf\u8ba1 (GROUP BY + \u591a\u805a\u5408)",
+    "focus": "Vectorized Aggregation",
+    "duckdb_median_ms": 2.195,
+    "duckdb_all_ms": [
+      6.35,
+      3.033,
+      3.481,
+      2.241,
+      2.149,
+      2.049,
+      2.147
+    ],
+    "mysql_median_ms": 8.566,
+    "mysql_all_ms": [
+      8.664,
+      8.532,
+      8.985,
+      8.754,
+      8.519,
+      8.599,
+      8.422
+    ],
+    "speedup": "3.9x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q4_full_scan_narrow",
+    "description": "\u5168\u8868\u805a\u5408 \u2014 Narrow (\u53ea\u8bfb Close + Volume)",
+    "focus": "Columnar Storage I/O \u2014 Narrow Scan",
+    "duckdb_median_ms": 0.657,
+    "duckdb_all_ms": [
+      0.999,
+      0.664,
+      0.649,
+      0.599,
+      0.671,
+      0.651,
+      0.829
+    ],
+    "mysql_median_ms": 3.673,
+    "mysql_all_ms": [
+      3.693,
+      3.492,
+      3.655,
+      3.691,
+      3.709,
+      3.565,
+      3.938
+    ],
+    "speedup": "5.6x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q5_rolling_stddev",
+    "description": "20\u65e5\u6eda\u52a8\u6807\u51c6\u5dee (\u6ce2\u52a8\u7387\u6307\u6807)",
+    "focus": "Vectorized Window + STDDEV",
+    "duckdb_median_ms": 4.011,
+    "duckdb_all_ms": [
+      3.95,
+      3.946,
+      4.075,
+      4.148,
+      3.794,
+      3.493,
+      4.084
+    ],
+    "mysql_median_ms": 43.206,
+    "mysql_all_ms": [
+      43.371,
+      41.623,
+      42.317,
+      44.253,
+      43.686,
+      43.0,
+      43.411
+    ],
+    "speedup": "10.8x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q6_wide_projection",
+    "description": "\u5168\u5217\u6295\u5f71 SELECT * \u2014 Wide Scan \u5bf9\u7167\u5b9e\u9a8c",
+    "focus": "Columnar Storage \u2014 Wide Scan (\u5217\u5b58\u52a3\u52bf\u573a\u666f)",
+    "duckdb_median_ms": 3.101,
+    "duckdb_all_ms": [
+      4.483,
+      3.703,
+      3.126,
+      3.011,
+      3.077,
+      3.818,
+      3.061
+    ],
+    "mysql_median_ms": 27.147,
+    "mysql_all_ms": [
+      30.295,
+      26.417,
+      26.085,
+      26.973,
+      28.062,
+      27.321,
+      27.91
+    ],
+    "speedup": "8.8x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q7_point_lookup",
+    "description": "Point Lookup \u2014 single row by Symbol + Date",
+    "focus": "OLTP \u2014 B-tree Index (MySQL advantage)",
+    "duckdb_median_ms": 0.648,
+    "duckdb_all_ms": [
+      1.568,
+      0.727,
+      0.622,
+      0.616,
+      0.704,
+      0.674,
+      0.611
+    ],
+    "mysql_median_ms": 0.825,
+    "mysql_all_ms": [
+      1.486,
+      0.896,
+      0.961,
+      0.805,
+      0.723,
+      0.793,
+      0.845
+    ],
+    "speedup": "1.3x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q8_small_range",
+    "description": "Small Range Scan \u2014 1 month for 1 stock",
+    "focus": "OLTP \u2014 B-tree Range Scan (MySQL advantage)",
+    "duckdb_median_ms": 0.735,
+    "duckdb_all_ms": [
+      1.149,
+      0.82,
+      0.835,
+      0.755,
+      0.715,
+      0.679,
+      0.666
+    ],
+    "mysql_median_ms": 1.004,
+    "mysql_all_ms": [
+      1.464,
+      1.11,
+      1.166,
+      0.897,
+      0.749,
+      0.805,
+      1.15
+    ],
+    "speedup": "1.4x",
+    "n_runs": 7
+  },
+  {
+    "session": "20260507_172559",
+    "query_id": "Q9_single_stock_filter",
+    "description": "Single-stock full history filter",
+    "focus": "OLTP \u2014 Selective Filter (MySQL advantage)",
+    "duckdb_median_ms": 1.153,
+    "duckdb_all_ms": [
+      1.677,
+      1.266,
+      1.203,
+      1.094,
+      1.102,
+      1.034,
+      1.402
+    ],
+    "mysql_median_ms": 9.165,
+    "mysql_all_ms": [
+      9.981,
+      9.449,
+      9.018,
+      9.012,
+      8.917,
+      9.359,
+      9.311
+    ],
+    "speedup": "7.9x",
+    "n_runs": 7
+  }
+]

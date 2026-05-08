@@ -93,26 +93,27 @@ needed.
 
 ### Option A — uv (recommended)
 
+`uv run <cmd>` automatically uses the project's `.venv/` — you do **not**
+need `source .venv/bin/activate`. Just prefix every command with `uv run`.
+
 ```bash
-# 1. install uv (one-time, picks up on PATH after a new shell)
+# 1. install uv (one-time)
 curl -LsSf https://astral.sh/uv/install.sh | sh        # macOS / Linux / WSL
 # (Windows PowerShell:  irm https://astral.sh/uv/install.ps1 | iex)
 
-# 2. install the project's deps into a local .venv/
+# 2. install project deps into a local .venv/
 cd DS551_Project_
 uv sync
 
-# 3. run any command inside the project's venv
+# 3. run anything via `uv run`
 uv run python main.py
 uv run python run_all_experiments.py --runs 7
 uv run streamlit run dashboard.py
 ```
 
-> If you prefer not to type `uv run` every time, activate the venv once:
-> ```bash
-> source .venv/bin/activate            # bash / zsh
-> # then: python main.py, streamlit run dashboard.py, etc.
-> ```
+> Optional shortcut: if you'd rather drop the `uv run` prefix in a single
+> shell session, activate the venv once with `source .venv/bin/activate`
+> and then call `python` / `streamlit` directly. Both styles are equivalent.
 
 ### Option B — pip
 
