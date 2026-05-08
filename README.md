@@ -1,6 +1,6 @@
 # Stock Market Analytics Dashboard
 
-**DSCI 551 — DuckDB (columnar + vectorized) vs MySQL benchmark** on Yahoo Finance OHLCV data, with a documentary comparison against MongoDB in the final report.
+**DSCI 551 — DuckDB (columnar + vectorized) vs MySQL benchmark** on Yahoo Finance OHLCV data.
 
 **Authors:** Hanwen Yang / Jialiang Lou
 
@@ -8,7 +8,7 @@
 
 ## TA Quick Start
 
-All datasets are pre-committed under `data/`. No internet, MySQL, or MongoDB needed.
+All datasets are pre-committed under `data/`. No internet or MySQL needed.
 
 ```bash
 uv sync                                                  # install deps
@@ -60,10 +60,6 @@ EOF
 ```
 
 Verify: `mysql -u dsci551 -ppassword -e "SELECT VERSION();"`.
-
-### Optional MongoDB
-
-Not required for grading — the final report's MongoDB comparison is documentary (BSON, WiredTiger, aggregation pipeline). To run empirical Mongo numbers anyway, install `mongodb-org`, start `mongod`, then `uv run python mongo_run.py --compare-all`.
 
 ---
 
@@ -132,12 +128,5 @@ No external API keys are required. The only secret-shaped values are local DB cr
 |---|---|
 | `MYSQL_USER` / `MYSQL_PASSWORD` | `root` / `password` |
 | `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DB` | `127.0.0.1` / `3306` / `stock_db` |
-| `MONGO_URI` / `MONGO_DB` | `mongodb://127.0.0.1:27017` / `stock_db` |
 
 **Never commit `.env`** — it is git-ignored. See `.env.example` for the template.
-
----
-
-## Demo
-
-Live demo speaking script: [`DEMO_TALKING_SCRIPT.md`](DEMO_TALKING_SCRIPT.md).
