@@ -2,92 +2,103 @@
 
 **DSCI 551 Course Project — Inside DuckDB: Columnar Storage & Vectorized Query Execution**
 
-DuckDB (Columnar + Vectorized) vs MySQL (Row-Based) vs MongoDB (Document) Benchmark
+DuckDB (Columnar + Vectorized) vs MySQL (Row-Based) — a head-to-head benchmark
+on real Yahoo Finance OHLCV data, with a written architectural comparison
+against MongoDB in the final report.
 
-Authors: Hanwen Yang / Jialiang Lou
+**Authors:** Hanwen Yang / Jialiang Lou
 
 ---
 
-## 🚀 TA Quick Start (3 commands)
+## TA Quick Start (3 commands, no MySQL/Mongo required)
 
-**All required data files are already committed under `data/`. No internet needed.**
+All required datasets are committed under `data/`. The dashboard and demo run
+in DuckDB-only mode by default, so no database server is needed for grading.
 
 ```bash
 # 1. Install dependencies
-pip install -r requirements.txt   # or: uv sync
+uv sync                              # or: pip install -r requirements.txt
 
-# 2. Launch interactive dashboard (recommended for grading)
+# 2. Launch the interactive dashboard (recommended for grading)
 streamlit run dashboard.py
 
 # 3. Or run the scripted live demo (5–10 min walkthrough)
 python demo.py --skip-download --no-mysql
 ```
 
-> MySQL / MongoDB are **optional**. Without them the demo automatically falls
-> back to DuckDB-only mode using the pre-packaged `data/stock_analytics.duckdb`.
->
-> For the full three-engine comparison see the [Full Setup](#full-setup-optional)
-> section below.
+> If you also want to reproduce the MySQL comparison numbers, jump to
+> [Full Setup](#full-setup-mysql-optional) below — it takes ~3 extra minutes.
 
 ---
 
-## 项目结构
+## Repository Layout
 
 ```
 .
-├── main.py                  # CLI 入口 — DuckDB vs MySQL benchmark
-├── demo.py                  # 现场 Demo 脚本 (5-10 min 带 pause)
-├── dashboard.py             # Streamlit 交互式 Dashboard
-├── run_all_experiments.py   # 一键跑全部实验 (small + large + profiling)
+├── main.py                  # CLI entry — DuckDB vs MySQL benchmark
+├── demo.py                  # Live demo script (5–10 min, with pauses)
+├── dashboard.py             # Streamlit interactive dashboard
+├── run_all_experiments.py   # One-shot runner for every experiment
 │
-├── downloader.py            # Yahoo Finance 数据下载 & Parquet/CSV 缓存
-├── db_run.py                # DuckDB / MySQL 初始化 + Benchmark 运行
-├── mongo_run.py             # MongoDB 初始化 + Benchmark (final report 对比)
-├── explain_analyzer.py      # EXPLAIN ANALYZE 执行计划对比报告
+├── downloader.py            # Yahoo Finance fetch + Parquet/CSV cache
+├── db_run.py                # DuckDB / MySQL setup + benchmark loop
+├── mongo_run.py             # Optional MongoDB benchmark (qualitative comparison only in report)
+├── explain_analyzer.py      # EXPLAIN ANALYZE comparison report generator
 │
-├── schema/                  # 独立 Schema 脚本 (TA 可手动执行)
-│   ├── duckdb_schema.sql
-│   ├── mysql_schema.sql
-│   └── mongodb_schema.js
+├── data/                    # Pre-packaged datasets (committed to git)
+│   ├── 5stocks_2015_2025.parquet     # ~550 KB — primary demo data
+│   ├── 5stocks_2015_2025.csv         # MySQL LOAD DATA source
+│   ├── 30stocks_2010_2025.parquet    # ~5 MB — large dataset (scaling exp.)
+│   ├── 30stocks_2010_2025.csv
+│   └── stock_analytics*.duckdb       # Pre-baked DuckDB files
 │
-├── data/                    # ★ 预打包数据集 (入 git, 无需下载)
-│   ├── 5stocks_2015_2025.parquet      (~500KB, demo 主数据)
-│   ├── 5stocks_2015_2025.csv          (MySQL LOAD DATA 用)
-│   └── stock_analytics.duckdb         (预烤 DuckDB 文件, demo 兜底)
+├── output/                  # Benchmark results & EXPLAIN reports
+│   ├── benchmark_results.csv         # Cumulative benchmark log
+│   ├── benchmark_small_*.json        # Small-dataset run snapshot
+│   ├── benchmark_large_*.json        # Large-dataset run snapshot
+│   ├── scaling_results.csv           # Speedup vs row count
+│   ├── explain_report.txt            # DuckDB vs MySQL EXPLAIN ANALYZE
+│   └── profile_Q*.json               # DuckDB operator-level profiling
 │
-├── output/                  # Benchmark 结果 & EXPLAIN 报告
-│   ├── benchmark_results.csv
-│   ├── benchmark_YYYYMMDD_HHMMSS.json
-│   └── explain_report.txt
-│
-├── docs/
-│   ├── DEMO_SCRIPT.md         # Demo 演讲稿 + 时间轴
-│   └── MAPPING_CHEATSHEET.md  # Q1-Q9 internals→app 映射卡
-│
-├── .env.example             # MySQL/MongoDB 密码配置模板
+├── DEMO_TALKING_SCRIPT.md   # 5-min live demo speaking script
+├── .env.example             # Template for MySQL / MongoDB credentials
+├── pyproject.toml           # uv / hatch project config
+├── requirements.txt         # pip-friendly dependency list
 └── README.md
 ```
 
----
-
-## 环境要求
-
-- Python 3.10+
-- WSL (Ubuntu) 推荐 (MySQL / DuckDB / MongoDB 都在本地跑)
-- MySQL 8.0（可选）
-- MongoDB 6.0+（可选，final report 对比用）
+> Note: schema definitions and benchmark queries are embedded in `db_run.py`
+> (function `setup_duckdb`, `setup_mysql`, and `BENCHMARK_QUERIES`). There is
+> no separate `schema/` directory — running the Python entry points
+> automatically creates tables and loads data.
 
 ---
 
-## 安装依赖
+## Environment Requirements
 
-### 方式一：uv（推荐）
+- Python 3.11+
+- WSL Ubuntu 22.04 (recommended) or any Linux/macOS shell
+- MySQL 8.0 (optional — only required for the cross-engine comparison)
+- MongoDB 6.0+ (optional — only required if you want empirical Mongo numbers; the
+  final report comparison with MongoDB is documentary, not benchmark-driven)
+
+---
+
+## Install Dependencies
+
+### Option A — uv (recommended)
 
 ```bash
 uv sync
 ```
 
-### 方式二：pip
+### Option B — pip
+
+```bash
+pip install -r requirements.txt
+```
+
+### Option C — explicit pip
 
 ```bash
 pip install duckdb pandas yfinance pyarrow rich sqlalchemy pymysql \
@@ -96,171 +107,283 @@ pip install duckdb pandas yfinance pyarrow rich sqlalchemy pymysql \
 
 ---
 
-## 配置（可选）
+## Configuration
 
-默认 MySQL 密码 `password`、主机 `127.0.0.1:3306`。如果你的环境不同：
+Default values (matched by the code) work out of the box for the DuckDB-only
+flow. To enable MySQL or MongoDB, copy the template and edit:
 
 ```bash
 cp .env.example .env
-# 编辑 .env 填入你的 MySQL/MongoDB 密码
+# edit .env to fill in your local credentials
 ```
 
-程序会自动读取 `.env`。**没有 .env 文件也能跑** —— 直接加 `--no-mysql`。
+The application loads `.env` automatically via `python-dotenv`. **Without an
+`.env` file the DuckDB-only path still works** — pass `--no-mysql` to any
+script that takes it.
 
 ---
 
-## Full Setup (optional)
+## Full Setup (MySQL, optional)
 
-### MySQL
+The MySQL comparison adds the row-store baseline (Q7/Q8 OLTP advantage and
+the column-pruning loss in Q4/Q6). Skip if you only need the DuckDB demo.
+
+### 1. Install and start MySQL on Ubuntu/WSL
 
 ```bash
-# WSL 内启动 MySQL
+sudo apt-get update
+sudo apt-get install -y mysql-server
 sudo service mysql start
-
-# 确认能连上
-mysql -u root -p -e "SELECT 1"
 ```
 
-### MongoDB
+### 2. Create a dedicated benchmark user
+
+By default, Ubuntu's MySQL `root` account uses the `auth_socket` plugin and
+**does not accept password logins**. Create a regular user instead:
 
 ```bash
-# 启动 MongoDB (Ubuntu)
+sudo mysql <<'EOF'
+CREATE USER 'dsci551'@'localhost' IDENTIFIED BY 'password';
+GRANT ALL PRIVILEGES ON *.* TO 'dsci551'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+```
+
+### 3. Wire up `.env`
+
+```bash
+cat > .env <<'EOF'
+MYSQL_USER=dsci551
+MYSQL_PASSWORD=password
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_DB=stock_db
+EOF
+```
+
+Sanity-check the connection:
+
+```bash
+mysql -u dsci551 -ppassword -e "SELECT VERSION();"
+```
+
+### 4. Run the benchmark
+
+```bash
+python main.py             # default 5 stocks
+# or for the full sweep used in the report:
+python run_all_experiments.py --runs 7
+```
+
+The Python code creates the `stock_db` database, loads the CSV, and runs
+the benchmarks automatically — no manual schema step required.
+
+---
+
+## MongoDB (optional — final report uses qualitative comparison)
+
+Per the project guidelines, the final report includes a written
+**Comparison with MySQL and MongoDB** section. The MongoDB part is
+based on documented internals (BSON storage, WiredTiger, B-tree indexing,
+aggregation pipeline) rather than a benchmark, so installing MongoDB is
+**not required** to reproduce the report. If you do want empirical
+Mongo numbers:
+
+```bash
+# install MongoDB Community Edition on Ubuntu 22.04
+sudo apt-get install -y gnupg curl
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
+  | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+  | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+sudo apt-get update
+sudo apt-get install -y mongodb-org
 sudo service mongod start
-mongosh --eval "db.runCommand({ ping: 1 })"
+
+# then run:
+python mongo_run.py --compare-all
 ```
 
 ---
 
-## 运行方式
+## Running the Application
 
-### 1. Streamlit Dashboard (交互式，推荐 demo)
+### 1. Streamlit Dashboard (interactive, recommended for grading)
 
 ```bash
 streamlit run dashboard.py
 ```
 
-浏览器打开后，侧边栏选择查询和 runs 数，点 "Run Benchmark"。
-包含 4 个标签页：Dataset / Benchmark / EXPLAIN Plans / Architecture。
+Open the printed URL in your browser. The sidebar lets you pick queries and
+the number of runs; click **Run Benchmark**. Four tabs are available:
+**Dataset / Benchmark / EXPLAIN Plans / Architecture**.
 
-### 2. 脚本式 Demo (5–10 min, 适合 Zoom 演示)
+### 2. Scripted Live Demo (5–10 min, Zoom-friendly)
 
 ```bash
-python demo.py --skip-download          # 使用缓存数据
-python demo.py --skip-download --auto   # 无 pause, 一口气跑完
-python demo.py --skip-download --no-mysql  # 没装 MySQL 也能跑
+python demo.py --skip-download                 # use cached data, paced demo
+python demo.py --skip-download --auto          # no pauses, run end-to-end
+python demo.py --skip-download --no-mysql      # DuckDB-only path
 ```
 
-### 3. CLI Benchmark (开发 / 批处理)
+### 3. CLI Benchmark (development / batch)
 
 ```bash
-# 默认 5 只股票全流程
+# default: 5 stocks, full pipeline
 python main.py
 
-# 大数据集 — 30 只股票 × 15 年 (~100K 行)
+# large dataset: 30 stocks × 15 years (~100K rows)
 python main.py --symbols extended --start 2010-01-01
 
-# 自定义股票
+# custom symbols
 python main.py --symbols AAPL TSLA NVDA META --start 2020-01-01
 
-# 不装 MySQL，只测 DuckDB
+# DuckDB-only (no MySQL)
 python main.py --no-mysql
 
-# 增加测试次数（更稳定的数据）
+# more runs for tighter median timings
 python main.py --runs 10
 ```
 
-### 4. 一键跑完所有实验（生成 final report 所需的全部数据）
+### 4. One-shot full experiment sweep (regenerates every report figure)
 
 ```bash
 python run_all_experiments.py --runs 7
 ```
 
-这会产出：
-- `output/benchmark_small.csv` (5 stocks × 10y)
-- `output/benchmark_large.csv` (30 stocks × 15y)
-- `output/scaling_results.csv` (speedup vs rows)
-- `output/profile_Q*.json` (DuckDB operator-level profiling)
-- `output/explain_report.txt` (DuckDB vs MySQL EXPLAIN 对比)
+Produces:
 
-### 5. 只跑指定查询
+- `output/benchmark_small_*.json` (5 stocks × 10y)
+- `output/benchmark_large_*.json` (30 stocks × 15y)
+- `output/scaling_results.csv` (speedup vs row count)
+- `output/profile_Q*.json` (DuckDB operator-level profiling)
+- `output/explain_report.txt` (DuckDB vs MySQL EXPLAIN ANALYZE)
+
+### 5. Run a subset of queries
 
 ```bash
 python main.py --queries Q1_50day_MA Q4_full_scan_narrow Q6_wide_projection
 ```
 
-可选查询 ID：
+Available query IDs:
 
-| Query ID | 说明 | 测试重点 |
+| Query ID | Description | Internals Tested |
 |---|---|---|
-| `Q1_50day_MA` | 50日均线 (Window) | Vectorized Execution |
-| `Q2_daily_volatility` | 每日波动率 (3列) | Column Pruning |
-| `Q3_annual_summary` | 年度汇总 (GROUP BY) | Vectorized Aggregation |
-| `Q4_full_scan_narrow` | 全表聚合 (2列) | Columnar I/O |
-| `Q5_rolling_stddev` | 20日滚动标准差 | Vectorized Window |
-| `Q6_wide_projection` | SELECT * 全列 | 列存劣势对照 |
-| `Q7_point_lookup` | 单行查找 | OLTP (MySQL 优势) |
-| `Q8_small_range` | 1 个月范围扫描 | OLTP (MySQL 优势) |
-| `Q9_single_stock_filter` | 单股全历史过滤 | OLTP (MySQL 优势) |
+| `Q1_50day_MA` | 50-day moving average (window) | Vectorized execution |
+| `Q2_daily_volatility` | Per-day volatility (3 cols) | Column pruning |
+| `Q3_annual_summary` | Annual GROUP BY summary | Vectorized aggregation |
+| `Q4_full_scan_narrow` | Full-table aggregate (2 cols) | Columnar I/O — narrow scan |
+| `Q5_rolling_stddev` | 20-day rolling stddev | Vectorized window + STDDEV |
+| `Q6_wide_projection` | `SELECT *` (all cols) | Columnar wide-scan disadvantage |
+| `Q7_point_lookup` | Single-row lookup | OLTP (MySQL B-tree wins) |
+| `Q8_small_range` | 1-month range scan | OLTP (MySQL B-tree wins) |
+| `Q9_single_stock_filter` | Single-stock full history | OLTP — selective filter |
 
-### 6. MongoDB 对比（final report 用）
+### 6. MongoDB cross-engine comparison (optional)
 
 ```bash
-python mongo_run.py                 # 加载 + 3 条等价查询
-python mongo_run.py --compare-all   # 与 DuckDB / MySQL 横向对比
+python mongo_run.py                  # load data + 3 equivalent queries
+python mongo_run.py --compare-all    # side-by-side with DuckDB / MySQL
 ```
 
 ---
 
-## 手动执行 Schema（可选）
+## Output File Reference
 
-如果你想单独初始化数据库而不走 Python：
+After running, files in `output/` include:
 
-```bash
-# DuckDB
-duckdb data/stock_analytics.duckdb < schema/duckdb_schema.sql
-
-# MySQL
-mysql -u root -p < schema/mysql_schema.sql
-
-# MongoDB
-mongosh stock_db < schema/mongodb_schema.js
-```
-
----
-
-## 输出文件说明
-
-运行后 `output/` 目录下会生成：
-
-| 文件 | 用途 |
+| File | Purpose |
 |---|---|
-| `benchmark_results.csv` | 累计 benchmark 结果（每次运行追加） |
-| `benchmark_YYYYMMDD_HHMMSS.json` | 单次运行 JSON 快照（含每次耗时） |
-| `explain_report.txt` | DuckDB vs MySQL EXPLAIN ANALYZE 对比 + operator 注解 |
-| `profile_Q*.json` | DuckDB 操作符级 profiling（JSON format） |
-| `scaling_results.csv` | 不同数据规模下的 speedup 对比 |
+| `benchmark_results.csv` | Cumulative benchmark log (appended each run) |
+| `benchmark_*_YYYYMMDD_HHMMSS.json` | Per-run snapshot incl. all timings |
+| `explain_report.txt` | DuckDB vs MySQL EXPLAIN ANALYZE + operator notes |
+| `profile_Q*.json` | DuckDB operator-level profiling (JSON format) |
+| `scaling_results.csv` | Speedup at small (~12K rows) vs large (~100K rows) |
 
 ---
 
-## 常见问题
+## Headline Results (from `output/scaling_results.csv`)
 
-**Q: yfinance 下载失败？**
-不需要下载 —— `data/` 下已打包好数据。程序会自动用缓存。
-若要强制下载：删除 `data/*.parquet` 后运行 `python main.py`。
+| Query | Small (~12K rows) | Large (~100K rows) | Trend |
+|---|---:|---:|---|
+| Q1 50-day MA (window) | **22.6×** | **77.8×** | ↑ Vectorized window scales |
+| Q2 daily volatility (3 cols) | 4.2× | 8.8× | ↑ Column pruning |
+| Q3 annual GROUP BY | 3.4× | 15.3× | ↑ Vectorized aggregation |
+| Q4 narrow full-scan | 6.1× | 28.0× | ↑ Columnar I/O |
+| Q5 rolling stddev | 10.7× | 39.3× | ↑ Window + SIMD |
+| Q6 SELECT * (wide) | 8.0× | 10.3× | DuckDB still wins, gap narrows |
+| Q7 point lookup | 1.3× | **0.91×** | ↓ MySQL B-tree wins (OLTP) |
+| Q8 small range | 1.5× | **0.72×** | ↓ MySQL B-tree wins (OLTP) |
+| Q9 single-stock filter | 7.6× | 7.2× | ↑ DuckDB (selective scan) |
 
-**Q: MySQL 连不上？**
-加 `--no-mysql` 跳过。Dashboard / Demo 自动回退到 DuckDB-only 模式。
-
-**Q: 想测更大数据量？**
-`python main.py --symbols extended --start 2000-01-01` 拉到 10 万行以上。
-
-**Q: Dashboard 启动报错 "DuckDB file not found"？**
-先跑 `python main.py --skip-download --no-mysql` 生成 `data/stock_analytics.duckdb`。
-或使用已打包的版本（默认）。
+(Numbers are DuckDB-relative speedup over MySQL on the same query.)
 
 ---
 
-## Demo 速查
+## Secret Keys & Credentials
 
-现场演示流程详见 [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)。
-Q1-Q9 internals→app 映射速查见 [`docs/MAPPING_CHEATSHEET.md`](docs/MAPPING_CHEATSHEET.md)。
+This project does **not** ship any credentials. The only secret-shaped values
+are the local MySQL / MongoDB passwords supplied by the operator via `.env`:
+
+| Variable | Where it is read | Default if unset |
+|---|---|---|
+| `MYSQL_USER` | `db_run.py`, `dashboard.py`, `demo.py` | `root` |
+| `MYSQL_PASSWORD` | same | `password` |
+| `MYSQL_HOST` | same | `127.0.0.1` |
+| `MYSQL_PORT` | same | `3306` |
+| `MYSQL_DB` | same | `stock_db` |
+| `MONGO_URI` | `mongo_run.py` | `mongodb://127.0.0.1:27017` |
+| `MONGO_DB` | `mongo_run.py` | `stock_db` |
+
+If your local MySQL uses different credentials, copy `.env.example` to `.env`
+and override. **Never commit your `.env` file** — it is git-ignored.
+
+No external API keys are required (Yahoo Finance via `yfinance` is
+unauthenticated, and the cached datasets in `data/` mean no network call is
+needed for grading).
+
+---
+
+## Dataset Notes
+
+- **Primary demo data:** `data/5stocks_2015_2025.parquet` (5 large-cap stocks,
+  ~12K rows). Real OHLCV history pulled from Yahoo Finance.
+- **Large dataset:** `data/30stocks_2010_2025.parquet` (~100K rows) used for
+  the scaling experiment.
+- **DuckDB pre-baked file:** `data/stock_analytics.duckdb` allows the
+  dashboard / demo to run without re-loading data.
+- The TA does not need internet access — every required dataset is committed
+  under `data/`. To regenerate from scratch, delete `data/*.parquet` and run
+  `python main.py` (this will fetch fresh data from Yahoo Finance).
+
+---
+
+## FAQ
+
+**Q: `yfinance` download fails / no internet?**
+You don't need it — pre-packaged data is in `data/`. Scripts auto-detect the
+cache.
+
+**Q: MySQL connection refused / `Access denied for user 'root'@'localhost'`?**
+Ubuntu's MySQL `root` account uses `auth_socket` and doesn't accept password
+login. Create the `dsci551` user as shown in [Full Setup](#full-setup-mysql-optional),
+or pass `--no-mysql` to skip MySQL entirely (dashboard and demo fall back to
+DuckDB-only).
+
+**Q: Want to test a larger workload?**
+```bash
+python main.py --symbols extended --start 2000-01-01     # ~150K+ rows
+```
+
+**Q: Dashboard error "DuckDB file not found"?**
+Run `python main.py --skip-download --no-mysql` once to generate
+`data/stock_analytics.duckdb`, or use the pre-baked one already in the repo.
+
+---
+
+## Demo Quick Reference
+
+The 5-minute live demo speaking script is in
+[`DEMO_TALKING_SCRIPT.md`](DEMO_TALKING_SCRIPT.md). It walks through the
+Q1–Q9 internals → application mapping using the dashboard and the EXPLAIN
+report.

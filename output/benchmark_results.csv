@@ -1,28 +1,28 @@
 session,query_id,description,focus,duckdb_median_ms,mysql_median_ms,speedup,n_runs,duckdb_all_ms,mysql_all_ms
-20260507_162434,Q1_50day_MA,50日均线 (Window Function),Vectorized Execution,4.217,-1.0,N/A,7,"[5.019, 4.715, 4.401, 4.306, 4.033, 4.128, 4.004]",[]
-20260507_162434,Q2_daily_volatility,每日波动率 — Narrow Projection (只读 3 列),Columnar Storage — Column Pruning,1.296,-1.0,N/A,7,"[1.348, 1.457, 1.221, 1.505, 1.372, 1.184, 1.103]",[]
-20260507_162434,Q3_annual_summary,年度汇总统计 (GROUP BY + 多聚合),Vectorized Aggregation,2.151,-1.0,N/A,7,"[2.588, 2.493, 2.267, 2.295, 2.035, 2.03, 1.873]",[]
-20260507_162434,Q4_full_scan_narrow,全表聚合 — Narrow (只读 Close + Volume),Columnar Storage I/O — Narrow Scan,0.633,-1.0,N/A,7,"[0.919, 0.681, 0.668, 0.58, 0.667, 0.599, 0.589]",[]
-20260507_162434,Q5_rolling_stddev,20日滚动标准差 (波动率指标),Vectorized Window + STDDEV,3.771,-1.0,N/A,7,"[4.27, 4.189, 3.669, 4.036, 3.872, 3.407, 3.365]",[]
-20260507_162434,Q6_wide_projection,全列投影 SELECT * — Wide Scan 对照实验,Columnar Storage — Wide Scan (列存劣势场景),3.032,-1.0,N/A,7,"[3.74, 3.958, 3.018, 2.832, 3.177, 3.047, 2.985]",[]
-20260507_162434,Q7_point_lookup,Point Lookup — single row by Symbol + Date,OLTP — B-tree Index (MySQL advantage),0.629,-1.0,N/A,7,"[0.914, 0.639, 0.658, 0.602, 0.632, 0.625, 0.583]",[]
-20260507_162434,Q8_small_range,Small Range Scan — 1 month for 1 stock,OLTP — B-tree Range Scan (MySQL advantage),0.768,-1.0,N/A,7,"[1.206, 0.801, 0.773, 0.82, 0.762, 0.724, 0.706]",[]
-20260507_162434,Q9_single_stock_filter,Single-stock full history filter,OLTP — Selective Filter (MySQL advantage),1.171,-1.0,N/A,7,"[1.738, 1.375, 1.275, 1.067, 1.019, 1.028, 1.373]",[]
-20260507_162447,Q1_50day_MA,50日均线 (Window Function),Vectorized Execution,10.154,-1.0,N/A,7,"[14.002, 9.919, 10.702, 10.225, 10.082, 10.693, 8.248]",[]
-20260507_162447,Q2_daily_volatility,每日波动率 — Narrow Projection (只读 3 列),Columnar Storage — Column Pruning,3.686,-1.0,N/A,7,"[3.542, 3.48, 3.68, 3.691, 3.793, 3.532, 3.944]",[]
-20260507_162447,Q3_annual_summary,年度汇总统计 (GROUP BY + 多聚合),Vectorized Aggregation,5.597,-1.0,N/A,7,"[6.262, 5.877, 5.92, 5.517, 5.509, 5.543, 5.651]",[]
-20260507_162447,Q4_full_scan_narrow,全表聚合 — Narrow (只读 Close + Volume),Columnar Storage I/O — Narrow Scan,0.804,-1.0,N/A,7,"[0.968, 0.817, 0.82, 0.801, 0.808, 0.767, 0.701]",[]
-20260507_162447,Q5_rolling_stddev,20日滚动标准差 (波动率指标),Vectorized Window + STDDEV,9.479,-1.0,N/A,7,"[9.675, 8.988, 9.2, 9.758, 8.796, 9.799, 11.293]",[]
-20260507_162447,Q6_wide_projection,全列投影 SELECT * — Wide Scan 对照实验,Columnar Storage — Wide Scan (列存劣势场景),5.582,-1.0,N/A,7,"[6.34, 5.862, 5.335, 5.848, 5.388, 5.523, 5.642]",[]
-20260507_162447,Q7_point_lookup,Point Lookup — single row by Symbol + Date,OLTP — B-tree Index (MySQL advantage),0.956,-1.0,N/A,7,"[1.187, 0.944, 0.911, 0.935, 1.085, 0.998, 0.967]",[]
-20260507_162447,Q8_small_range,Small Range Scan — 1 month for 1 stock,OLTP — B-tree Range Scan (MySQL advantage),1.041,-1.0,N/A,7,"[1.22, 1.132, 1.046, 1.036, 1.005, 1.032, 1.073]",[]
-20260507_162447,Q9_single_stock_filter,Single-stock full history filter,OLTP — Selective Filter (MySQL advantage),1.723,-1.0,N/A,7,"[1.761, 1.695, 1.914, 1.723, 1.723, 1.596, 1.861]",[]
-20260507_162449,Q1_50day_MA,50日均线 (Window Function),Vectorized Execution,3.734,-1.0,N/A,5,"[4.857, 4.199, 3.835, 3.633, 3.541]",[]
-20260507_162449,Q2_daily_volatility,每日波动率 — Narrow Projection (只读 3 列),Columnar Storage — Column Pruning,1.23,-1.0,N/A,5,"[1.402, 1.156, 1.305, 1.069, 1.427]",[]
-20260507_162449,Q3_annual_summary,年度汇总统计 (GROUP BY + 多聚合),Vectorized Aggregation,2.303,-1.0,N/A,5,"[2.711, 2.542, 2.513, 2.093, 1.878]",[]
-20260507_162449,Q4_full_scan_narrow,全表聚合 — Narrow (只读 Close + Volume),Columnar Storage I/O — Narrow Scan,0.601,-1.0,N/A,5,"[1.165, 0.661, 0.595, 0.596, 0.605]",[]
-20260507_162449,Q5_rolling_stddev,20日滚动标准差 (波动率指标),Vectorized Window + STDDEV,3.577,-1.0,N/A,5,"[3.954, 3.513, 3.771, 3.64, 3.5]",[]
-20260507_162449,Q6_wide_projection,全列投影 SELECT * — Wide Scan 对照实验,Columnar Storage — Wide Scan (列存劣势场景),3.462,-1.0,N/A,5,"[3.664, 3.954, 3.671, 3.253, 3.231]",[]
-20260507_162449,Q7_point_lookup,Point Lookup — single row by Symbol + Date,OLTP — B-tree Index (MySQL advantage),0.659,-1.0,N/A,5,"[1.049, 0.746, 0.656, 0.642, 0.661]",[]
-20260507_162449,Q8_small_range,Small Range Scan — 1 month for 1 stock,OLTP — B-tree Range Scan (MySQL advantage),0.635,-1.0,N/A,5,"[0.897, 0.716, 0.648, 0.621, 0.62]",[]
-20260507_162449,Q9_single_stock_filter,Single-stock full history filter,OLTP — Selective Filter (MySQL advantage),1.122,-1.0,N/A,5,"[1.189, 1.096, 1.148, 1.084, 1.242]",[]
+20260507_165810,Q1_50day_MA,50日均线 (Window Function),Vectorized Execution,4.081,81.385,19.9x,7,"[6.379, 4.649, 4.876, 3.991, 4.145, 3.99, 4.017]","[82.533, 79.949, 83.868, 81.575, 81.195, 80.698, 85.602]"
+20260507_165810,Q2_daily_volatility,每日波动率 — Narrow Projection (只读 3 列),Columnar Storage — Column Pruning,1.257,5.342,4.2x,7,"[2.26, 1.208, 1.042, 1.34, 1.754, 1.306, 1.195]","[5.362, 5.343, 5.476, 5.342, 5.273, 5.547, 5.19]"
+20260507_165810,Q3_annual_summary,年度汇总统计 (GROUP BY + 多聚合),Vectorized Aggregation,2.58,8.857,3.4x,7,"[8.924, 2.736, 2.448, 2.547, 3.278, 2.305, 2.614]","[9.422, 8.827, 9.629, 8.809, 8.637, 8.886, 8.93]"
+20260507_165810,Q4_full_scan_narrow,全表聚合 — Narrow (只读 Close + Volume),Columnar Storage I/O — Narrow Scan,0.797,4.277,5.4x,7,"[1.051, 0.779, 0.816, 0.716, 1.015, 0.859, 0.7]","[4.105, 4.193, 4.32, 4.178, 4.424, 4.235, 4.843]"
+20260507_165810,Q5_rolling_stddev,20日滚动标准差 (波动率指标),Vectorized Window + STDDEV,4.098,43.529,10.6x,7,"[4.596, 3.967, 3.803, 4.288, 4.074, 4.121, 4.67]","[47.353, 46.615, 47.289, 42.478, 42.779, 44.28, 42.744]"
+20260507_165810,Q6_wide_projection,全列投影 SELECT * — Wide Scan 对照实验,Columnar Storage — Wide Scan (列存劣势场景),3.755,27.614,7.4x,7,"[3.789, 3.421, 3.86, 4.049, 3.204, 3.651, 3.923]","[27.53, 27.332, 27.896, 27.043, 26.794, 29.838, 30.757]"
+20260507_165810,Q7_point_lookup,Point Lookup — single row by Symbol + Date,OLTP — B-tree Index (MySQL advantage),0.663,0.881,1.3x,7,"[1.711, 0.9, 0.699, 0.653, 0.634, 0.673, 0.644]","[1.402, 1.032, 1.035, 0.935, 0.827, 0.651, 0.777]"
+20260507_165810,Q8_small_range,Small Range Scan — 1 month for 1 stock,OLTP — B-tree Range Scan (MySQL advantage),0.807,0.988,1.2x,7,"[1.292, 1.053, 0.657, 0.711, 0.635, 0.903, 0.955]","[1.484, 1.102, 0.873, 0.79, 0.789, 1.184, 1.423]"
+20260507_165810,Q9_single_stock_filter,Single-stock full history filter,OLTP — Selective Filter (MySQL advantage),1.309,9.37,7.2x,7,"[2.217, 2.212, 1.323, 1.155, 1.037, 1.296, 1.709]","[10.618, 9.535, 9.191, 9.275, 10.112, 9.186, 9.464]"
+20260507_165828,Q1_50day_MA,50日均线 (Window Function),Vectorized Execution,10.75,740.79,68.9x,7,"[12.459, 12.743, 10.975, 11.027, 10.25, 10.525, 8.773]","[758.168, 736.926, 739.127, 742.454, 750.692, 742.628, 737.987]"
+20260507_165828,Q2_daily_volatility,每日波动率 — Narrow Projection (只读 3 列),Columnar Storage — Column Pruning,3.873,34.46,8.9x,7,"[4.339, 4.21, 4.473, 3.788, 3.649, 3.88, 3.865]","[34.593, 33.819, 34.463, 34.827, 34.999, 34.458, 34.009]"
+20260507_165828,Q3_annual_summary,年度汇总统计 (GROUP BY + 多聚合),Vectorized Aggregation,6.251,93.344,14.9x,7,"[6.978, 7.495, 6.35, 6.152, 6.015, 6.659, 6.032]","[91.744, 93.397, 93.291, 92.783, 93.535, 94.59, 93.107]"
+20260507_165828,Q4_full_scan_narrow,全表聚合 — Narrow (只读 Close + Volume),Columnar Storage I/O — Narrow Scan,1.109,25.866,23.3x,7,"[1.46, 1.438, 1.348, 1.186, 0.961, 1.033, 0.773]","[25.445, 25.803, 27.261, 25.928, 25.608, 28.786, 25.697]"
+20260507_165828,Q5_rolling_stddev,20日滚动标准差 (波动率指标),Vectorized Window + STDDEV,10.005,418.624,41.8x,7,"[11.455, 9.942, 10.067, 10.819, 9.427, 9.587, 10.78]","[421.924, 420.775, 413.872, 418.922, 416.547, 422.271, 418.326]"
+20260507_165828,Q6_wide_projection,全列投影 SELECT * — Wide Scan 对照实验,Columnar Storage — Wide Scan (列存劣势场景),6.355,62.325,9.8x,7,"[7.024, 6.314, 6.284, 5.762, 6.812, 6.493, 6.396]","[61.315, 62.648, 63.289, 62.639, 62.01, 60.014, 60.702]"
+20260507_165828,Q7_point_lookup,Point Lookup — single row by Symbol + Date,OLTP — B-tree Index (MySQL advantage),1.128,1.047,0.9x,7,"[1.407, 1.091, 1.321, 1.372, 1.066, 0.927, 1.166]","[1.411, 1.039, 1.501, 1.057, 1.055, 0.714, 0.622]"
+20260507_165828,Q8_small_range,Small Range Scan — 1 month for 1 stock,OLTP — B-tree Range Scan (MySQL advantage),1.117,0.936,0.8x,7,"[1.586, 1.275, 1.078, 1.107, 1.122, 1.25, 1.112]","[1.386, 0.995, 0.917, 0.955, 0.888, 0.983, 0.844]"
+20260507_165828,Q9_single_stock_filter,Single-stock full history filter,OLTP — Selective Filter (MySQL advantage),1.931,14.043,7.3x,7,"[2.326, 1.995, 1.913, 1.936, 1.927, 1.965, 1.594]","[15.198, 37.57, 14.231, 15.16, 13.855, 13.309, 13.546]"
+20260507_165925,Q1_50day_MA,50日均线 (Window Function),Vectorized Execution,3.958,80.806,20.4x,5,"[4.535, 4.088, 4.397, 3.828, 3.758]","[81.339, 80.149, 81.463, 79.069, 83.61]"
+20260507_165925,Q2_daily_volatility,每日波动率 — Narrow Projection (只读 3 列),Columnar Storage — Column Pruning,1.23,5.351,4.4x,5,"[1.68, 1.282, 1.301, 1.178, 1.16]","[5.909, 5.446, 5.35, 5.351, 5.338]"
+20260507_165925,Q3_annual_summary,年度汇总统计 (GROUP BY + 多聚合),Vectorized Aggregation,2.523,8.757,3.5x,5,"[2.867, 2.382, 2.533, 2.684, 2.514]","[9.143, 8.739, 8.952, 8.759, 8.755]"
+20260507_165925,Q4_full_scan_narrow,全表聚合 — Narrow (只读 Close + Volume),Columnar Storage I/O — Narrow Scan,0.658,4.05,6.2x,5,"[1.128, 0.744, 0.627, 0.645, 0.671]","[4.276, 4.065, 3.867, 4.035, 4.318]"
+20260507_165925,Q5_rolling_stddev,20日滚动标准差 (波动率指标),Vectorized Window + STDDEV,4.05,43.01,10.6x,5,"[4.595, 4.096, 3.92, 4.003, 4.15]","[45.382, 45.27, 42.656, 42.767, 43.252]"
+20260507_165925,Q6_wide_projection,全列投影 SELECT * — Wide Scan 对照实验,Columnar Storage — Wide Scan (列存劣势场景),3.756,26.945,7.2x,5,"[3.806, 3.98, 3.538, 3.746, 3.767]","[28.326, 27.124, 46.499, 26.767, 26.023]"
+20260507_165925,Q7_point_lookup,Point Lookup — single row by Symbol + Date,OLTP — B-tree Index (MySQL advantage),0.663,1.308,2.0x,5,"[1.131, 0.74, 0.702, 0.621, 0.624]","[1.582, 1.721, 2.013, 0.894, 0.676]"
+20260507_165925,Q8_small_range,Small Range Scan — 1 month for 1 stock,OLTP — B-tree Range Scan (MySQL advantage),0.666,1.208,1.8x,5,"[1.458, 0.86, 0.719, 0.606, 0.614]","[1.168, 1.011, 1.279, 1.405, 1.136]"
+20260507_165925,Q9_single_stock_filter,Single-stock full history filter,OLTP — Selective Filter (MySQL advantage),1.095,9.427,8.6x,5,"[1.777, 1.418, 1.135, 1.013, 1.055]","[9.885, 9.831, 9.023, 10.453, 8.998]"
