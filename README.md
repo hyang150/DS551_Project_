@@ -16,6 +16,13 @@ uv run streamlit run dashboard.py                        # interactive UI (recom
 uv run python demo.py --skip-download --no-mysql         # 5-min scripted demo
 ```
 
+> **Data is fetched automatically — no manual download required.**
+> If `data/` is empty (or you delete the cached files), every entry point
+> calls `downloader.fetch_stock_data()` which pulls fresh OHLCV data from
+> Yahoo Finance via the `yfinance` package and saves it as Parquet + CSV.
+> The pre-committed files in `data/` are simply the same auto-generated
+> output, included so grading works fully offline.
+
 For the full three-engine numbers, see [Optional MySQL setup](#optional-mysql-setup).
 
 ---
