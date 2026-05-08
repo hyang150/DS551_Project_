@@ -86,15 +86,39 @@ python demo.py --skip-download --no-mysql
 
 ## Install Dependencies
 
+This project uses [`uv`](https://docs.astral.sh/uv/) as its primary
+dependency / virtualenv manager. `uv` reads `pyproject.toml` + `uv.lock` and
+creates a project-local `.venv/` automatically — no manual `python -m venv`
+needed.
+
 ### Option A — uv (recommended)
 
 ```bash
+# 1. install uv (one-time, picks up on PATH after a new shell)
+curl -LsSf https://astral.sh/uv/install.sh | sh        # macOS / Linux / WSL
+# (Windows PowerShell:  irm https://astral.sh/uv/install.ps1 | iex)
+
+# 2. install the project's deps into a local .venv/
+cd DS551_Project_
 uv sync
+
+# 3. run any command inside the project's venv
+uv run python main.py
+uv run python run_all_experiments.py --runs 7
+uv run streamlit run dashboard.py
 ```
+
+> If you prefer not to type `uv run` every time, activate the venv once:
+> ```bash
+> source .venv/bin/activate            # bash / zsh
+> # then: python main.py, streamlit run dashboard.py, etc.
+> ```
 
 ### Option B — pip
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -104,6 +128,11 @@ pip install -r requirements.txt
 pip install duckdb pandas yfinance pyarrow rich sqlalchemy pymysql \
             streamlit plotly pymongo python-dotenv
 ```
+
+> **Heads-up:** if you mix `uv run` and bare `python` in the same shell you
+> will hit `ModuleNotFoundError`. `uv run` uses the project's `.venv`; bare
+> `python` uses your system interpreter. Pick one — see
+> [Common Errors](#common-errors) below.
 
 ---
 
@@ -358,26 +387,122 @@ needed for grading).
 
 ---
 
-## FAQ
+## Running Without MySQL or MongoDB
 
-**Q: `yfinance` download fails / no internet?**
-You don't need it — pre-packaged data is in `data/`. Scripts auto-detect the
-cache.
+You do **not** need MySQL or MongoDB installed to grade or run the project.
+DuckDB is the only required engine — it ships as a pure Python wheel
+(`pip install duckdb`) with no separate server.
 
-**Q: MySQL connection refused / `Access denied for user 'root'@'localhost'`?**
-Ubuntu's MySQL `root` account uses `auth_socket` and doesn't accept password
-login. Create the `dsci551` user as shown in [Full Setup](#full-setup-mysql-optional),
-or pass `--no-mysql` to skip MySQL entirely (dashboard and demo fall back to
-DuckDB-only).
+| Engine | Installed? | What still works |
+|---|---|---|
+| **DuckDB only** | ✅ | Dashboard, demo, all 9 benchmark queries (DuckDB column), EXPLAIN report (DuckDB plans), profile JSONs, all final-report visuals except the cross-engine speedup table |
+| **DuckDB + MySQL** | ✅ | Everything above **plus** the MySQL row-store baseline, `output/scaling_results.csv`, OLTP comparison (Q7/Q8) |
+| **DuckDB + MySQL + MongoDB** | ✅ | Adds the optional `mongo_run.py --compare-all` empirical numbers (the report's MongoDB section is qualitative either way) |
 
-**Q: Want to test a larger workload?**
+When MySQL is missing, every entry point accepts `--no-mysql`:
+```bash
+python main.py --no-mysql
+python demo.py --skip-download --no-mysql
+streamlit run dashboard.py        # auto-detects and falls back to DuckDB-only
+```
+
+When MongoDB is missing: just don't run `mongo_run.py`. Nothing else depends on it.
+
+---
+
+## Common Errors (and what we hit while building this)
+
+### 1. `ModuleNotFoundError: No module named 'yfinance'`
+
+**Cause:** Mixing `uv run python ...` (uses `.venv/`) with bare `python ...`
+(uses your system interpreter, which has no project deps). The traceback
+points to `downloader.py` line 7 because that is the first import.
+
+**Fix:** pick one path and stick to it.
+```bash
+# Either: prefix every command with uv run
+uv run python run_all_experiments.py --runs 7
+
+# Or: activate the venv once per shell
+source .venv/bin/activate
+python run_all_experiments.py --runs 7
+```
+
+### 2. `uv add yfinance` says "package not found"
+
+You probably typed `yfinace` (missing the `n`). The package is
+`yfinance`. Also note: it is already declared in `pyproject.toml`, so
+`uv sync` is sufficient — you don't need `uv add` at all.
+
+### 3. MySQL `(1698, "Access denied for user 'root'@'localhost'")`
+
+**Cause:** On Ubuntu/WSL, the default `root` MySQL account uses the
+`auth_socket` plugin — it ignores any password and requires you to log in
+via `sudo mysql`. Setting `MYSQL_PASSWORD` in `.env` does **not** help;
+error 1698 is "this user is not allowed to use a password," not "wrong
+password" (that would be error 1045).
+
+**Fix:** create a separate password-based user (one-time, requires sudo):
+```bash
+sudo mysql <<'EOF'
+CREATE USER 'dsci551'@'localhost' IDENTIFIED BY 'password';
+GRANT ALL PRIVILEGES ON *.* TO 'dsci551'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+```
+then point `.env` at it:
+```bash
+cat > .env <<'EOF'
+MYSQL_USER=dsci551
+MYSQL_PASSWORD=password
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_DB=stock_db
+EOF
+```
+Verify:
+```bash
+mysql -u dsci551 -ppassword -e "SELECT VERSION();"
+```
+
+### 4. `Unit mysql.service could not be found`
+
+MySQL is not installed on this WSL distro yet:
+```bash
+sudo apt-get update && sudo apt-get install -y mysql-server
+sudo service mysql start
+```
+(Note: WSL's MySQL listens on `127.0.0.1:3306` by default. WSL2 cannot
+reach MySQL running on the Windows host via `127.0.0.1` because WSL2 is in
+its own network namespace — install MySQL inside WSL itself.)
+
+### 5. Dashboard shows `DuckDB file not found`
+
+The dashboard expects `data/stock_analytics.duckdb`. The committed copy is
+already in the repo; if it's missing locally, regenerate it with:
+```bash
+python main.py --skip-download --no-mysql
+```
+
+### 6. `yfinance` download fails / "no internet"
+
+You don't need internet. Pre-packaged Parquet/CSV files live under `data/`.
+Scripts auto-detect the cache. To force a fresh fetch, delete
+`data/*.parquet` and re-run `python main.py`.
+
+### 7. Need a larger workload than 100K rows
+
 ```bash
 python main.py --symbols extended --start 2000-01-01     # ~150K+ rows
 ```
 
-**Q: Dashboard error "DuckDB file not found"?**
-Run `python main.py --skip-download --no-mysql` once to generate
-`data/stock_analytics.duckdb`, or use the pre-baked one already in the repo.
+### 8. `data/` or `output/` directory missing
+
+`data/` is committed (canonical 5-stock + 30-stock files). `output/` is
+regenerated on demand:
+```bash
+python run_all_experiments.py --runs 7
+```
 
 ---
 
