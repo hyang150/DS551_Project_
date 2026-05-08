@@ -3,18 +3,18 @@ demo.py — DSCI 551 Final Demo Script
 Stock Market Analytics with DuckDB: Columnar Storage & Vectorized Execution
 
 Usage:
-    python demo.py                  # 全流程 demo (需要 MySQL)
-    python demo.py --no-mysql       # 跳过 MySQL (仅 DuckDB)
-    python demo.py --skip-download  # 跳过下载，用缓存
+    python demo.py                  # full demo (MySQL required)
+    python demo.py --no-mysql       # skip MySQL (DuckDB only)
+    python demo.py --skip-download  # skip download, use cache
 
-演示流程 (5-10 min):
-    Step 0: 项目介绍 (口述)
-    Step 1: 数据加载 — Parquet (DuckDB) vs CSV (MySQL)
-    Step 2: Columnar Storage 演示 — Narrow vs Wide Scan
-    Step 3: Vectorized Execution 演示 — Window Functions
-    Step 4: OLTP 对比 — 单行查找 (MySQL 优势场景)
-    Step 5: 完整 Benchmark 汇总
-    Step 6: EXPLAIN ANALYZE 对比
+Demo flow (5-10 min):
+    Step 0: Project intro (spoken)
+    Step 1: Data loading — Parquet (DuckDB) vs CSV (MySQL)
+    Step 2: Columnar Storage demo — narrow vs wide scan
+    Step 3: Vectorized Execution demo — window functions
+    Step 4: OLTP comparison — point lookup (MySQL advantage)
+    Step 5: Full benchmark summary
+    Step 6: EXPLAIN ANALYZE comparison
 """
 
 import argparse
@@ -41,12 +41,12 @@ except ImportError:
 
 console = Console()
 
-# ── 路径配置 ──
+# ── Paths ──
 PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR    = PROJECT_DIR / "data"
 DUCKDB_FILE = str(DATA_DIR / "stock_analytics.duckdb")  # setup_duckdb will create/overwrite
 
-# ── MySQL 配置 — env var first, defaults as fallback ──
+# ── MySQL config — env var first, defaults as fallback ──
 MYSQL_USER     = os.getenv("MYSQL_USER",     "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
 MYSQL_HOST     = os.getenv("MYSQL_HOST",     "127.0.0.1")
@@ -55,16 +55,16 @@ MYSQL_DB       = os.getenv("MYSQL_DB",       "stock_db")
 
 
 # ============================================================
-#  工具函数
+#  Helpers
 # ============================================================
 def pause(msg: str = "Press Enter to continue..."):
-    """演示暂停点，让 presenter 控制节奏"""
+    """Pause the demo so the presenter can control pacing."""
     console.print(f"\n[dim italic]  >>> {msg}[/dim italic]")
     input()
 
 
 def timed_query(con_or_engine, sql: str, db_type: str, n_runs: int = 5) -> tuple:
-    """多次运行取中位数，返回 (df, median_ms)"""
+    """Run the query n_runs times and return (df, median_ms, all_times)."""
     times = []
     last_df = None
     for _ in range(n_runs):
@@ -74,12 +74,12 @@ def timed_query(con_or_engine, sql: str, db_type: str, n_runs: int = 5) -> tuple
         else:
             last_df = pd.read_sql(sql, con_or_engine)
         times.append((time.perf_counter() - t0) * 1000)
-    # 丢弃第一次 warm-up
+    # Drop the first run as warm-up
     median_ms = round(statistics.median(times[1:]), 3)
     return last_df, median_ms, times
 
 
-# ── DuckDB EXPLAIN 精简: 只保留关键算子, 过滤 PROJECTION / 内部 (de)compress 噪声 ──
+# ── DuckDB EXPLAIN simplifier: keep key operators, filter PROJECTION / internal (de)compress noise ──
 _KEY_DUCKDB_OPS = {
     "SEQ_SCAN", "HASH_GROUP_BY", "PERFECT_HASH_GROUP_BY",
     "WINDOW", "STREAMING_WINDOW", "UNGROUPED_AGGREGATE",
@@ -89,7 +89,7 @@ _KEY_DUCKDB_OPS = {
 
 
 def _parse_duckdb_plan(plan_text: str):
-    """解析 DuckDB EXPLAIN 的 ASCII 树 → [(op_name, {field: [values]}), ...]"""
+    """Parse the DuckDB EXPLAIN ASCII tree into [(op_name, {field: [values]}), ...]."""
     import re
     blocks, current = [], None
     for raw in plan_text.split("\n"):
@@ -123,12 +123,12 @@ def _parse_duckdb_plan(plan_text: str):
             current["fields"].setdefault(m2.group(1).strip(), []).append(m2.group(2).strip())
             current["cur_field"] = None
             continue
-        # 开始多行 field: "Projections:"
+        # Start of a multi-line field, e.g. "Projections:"
         if content.endswith(":"):
             current["cur_field"] = content.rstrip(":").strip()
             current["fields"].setdefault(current["cur_field"], [])
             continue
-        # value 行 — 跳过内部 (de)compress 和 "~12,580 rows" 这类统计
+        # Value line — skip internal (de)compress and statistics like "~12,580 rows"
         if current["cur_field"] and "__internal" not in content and not content.startswith("~"):
             current["fields"][current["cur_field"]].append(content)
     if current:
@@ -176,24 +176,24 @@ def _format_op(op: str, fields: dict) -> str:
 
 
 def _summarize_duckdb_plan(plan_text: str) -> str:
-    """EXPLAIN 树 → 压缩后的 pipeline (leaf→root)"""
+    """Compress the EXPLAIN tree into a pipeline summary (leaf -> root)."""
     blocks = _parse_duckdb_plan(plan_text)
     key_blocks = [(op, f) for (op, f) in blocks if op in _KEY_DUCKDB_OPS]
     if not key_blocks:
-        # 解析失败时回退到原始前 15 行
+        # Parsing failed — fall back to the first 15 lines of the raw plan
         head = "\n".join(plan_text.split("\n")[:15])
         return head + "\n[dim]...(truncated)[/dim]"
     lines = [_format_op(op, f) for (op, f) in key_blocks]
-    lines.reverse()  # DuckDB EXPLAIN 是根→叶, 翻转更符合数据流
-    return "\n  [dim]↓[/dim]\n".join(f"  [bold green]{l}[/bold green]" for l in lines)
+    lines.reverse()  # DuckDB EXPLAIN is root -> leaf; reverse so it reads as data flow
+    return "\n  [dim]down[/dim]\n".join(f"  [bold green]{l}[/bold green]" for l in lines)
 
 
 def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
-    """打印 DuckDB 和 MySQL 的 EXPLAIN ANALYZE 对比"""
+    """Print the DuckDB and MySQL EXPLAIN ANALYZE plans side by side."""
     console.print(f"\n[bold cyan]--- {title}: EXPLAIN ANALYZE ---[/bold cyan]")
 
-    # DuckDB — 只展示关键算子 pipeline, 过滤 PROJECTION 等噪声
-    console.print("\n[green]DuckDB Plan (key operators, leaf→root):[/green]")
+    # DuckDB — show only the key operator pipeline, dropping PROJECTION etc. noise
+    console.print("\n[green]DuckDB Plan (key operators, leaf -> root):[/green]")
     try:
         rows = duck_con.execute(f"EXPLAIN {sql}").fetchall()
         plan_text = "\n".join(str(row[-1]) for row in rows)
@@ -201,17 +201,18 @@ def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
-    # DuckDB — 再用 JSON profiling 拿到微秒级单算子耗时
+    # DuckDB — also run JSON profiling to capture microsecond-level per-operator timing
     console.print("\n[green]DuckDB Per-Operator Timing (detailed profiling):[/green]")
     import json as _json
     import tempfile as _tempfile
     profile_path = None
     try:
-        # 写到临时文件而不是 stdout，避免一大坨 JSON 喷到屏幕；
-        # 也绕开老版本 DuckDB 没有 duckdb_profiling_output() 的问题
+        # Write profiling JSON to a tempfile instead of stdout so we don't
+        # spew the whole tree on screen; also dodges old DuckDB versions that
+        # lack duckdb_profiling_output().
         fd, profile_path = _tempfile.mkstemp(suffix=".json", prefix="duckprof_")
         os.close(fd)
-        # DuckDB 在 Windows 上也要求正斜杠
+        # DuckDB requires forward slashes even on Windows
         profile_path_sql = profile_path.replace("\\", "/")
 
         duck_con.execute("PRAGMA enable_profiling='json'")
@@ -219,14 +220,14 @@ def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
         try:
             duck_con.execute("PRAGMA profiling_mode='detailed'")
         except Exception:
-            pass  # 旧版本可能不支持 detailed mode
+            pass  # older DuckDB versions may not support detailed mode
 
-        _ = duck_con.execute(sql).fetchall()  # 真正跑一遍以生成 profile 文件
+        _ = duck_con.execute(sql).fetchall()  # actually run the query to materialize the profile file
 
         with open(profile_path, "r", encoding="utf-8") as f:
             profile = _json.load(f)
 
-        # 递归展平算子树
+        # Recursively flatten the operator tree
         ops = []
         def _walk(node):
             if isinstance(node, dict) and "operator_name" in node:
@@ -260,7 +261,7 @@ def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
             except Exception:
                 pass
 
-    # MySQL EXPLAIN ANALYZE (8.0.18+) — 返回树状文本；旧版本回退到 EXPLAIN FORMAT=TREE / EXPLAIN
+    # MySQL EXPLAIN ANALYZE (8.0.18+) — returns tree-style text; older versions fall back to EXPLAIN FORMAT=TREE / EXPLAIN
     if mysql_engine:
         console.print("\n[yellow]MySQL EXPLAIN ANALYZE:[/yellow]")
         from sqlalchemy import text
@@ -272,7 +273,7 @@ def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
                 try:
                     result = conn.execute(text(stmt))
                     for row in result.fetchall():
-                        # ANALYZE / FORMAT=TREE 单列文本；普通 EXPLAIN 多列
+                        # ANALYZE / FORMAT=TREE returns a single text column; plain EXPLAIN returns multiple
                         console.print(" | ".join(str(c) for c in row))
                     break
                 except Exception as e:
@@ -283,10 +284,10 @@ def print_explain_side_by_side(duck_con, mysql_engine, sql: str, title: str):
 
 
 # ============================================================
-#  Demo 查询集
+#  Demo query catalog
 # ============================================================
 
-# -- Columnar Storage 演示 --
+# -- Columnar Storage demo --
 Q_NARROW = """
     SELECT COUNT(*), ROUND(AVG(Close), 4), SUM(Volume)
     FROM stock_data
@@ -296,7 +297,7 @@ Q_WIDE = """
     SELECT * FROM stock_data ORDER BY Date DESC LIMIT 5000
 """
 
-# -- Vectorized Execution 演示 --
+# -- Vectorized Execution demo --
 Q_WINDOW_MA50 = """
     SELECT Date, Symbol, Close,
            AVG(Close) OVER (
@@ -328,7 +329,7 @@ Q_AGGREGATION = """
     ORDER BY Year, Symbol
 """
 
-# -- OLTP 对比 (MySQL 优势场景) --
+# -- OLTP comparison (MySQL advantage) --
 Q_POINT_LOOKUP = """
     SELECT * FROM stock_data
     WHERE Symbol = 'AAPL' AND Date = '2023-06-15'
@@ -382,7 +383,7 @@ def step0_intro():
 def step1_data(duck_con, mysql_engine):
     console.print(Rule("[bold] Step 1: Data Loading & Schema [/bold]", style="green"))
 
-    # 展示数据规模
+    # Display dataset size
     row_count = duck_con.execute("SELECT COUNT(*) FROM stock_data").fetchone()[0]
     sym_count = duck_con.execute("SELECT COUNT(DISTINCT Symbol) FROM stock_data").fetchone()[0]
     date_range = duck_con.execute(
@@ -405,7 +406,7 @@ def step1_data(duck_con, mysql_engine):
         expand=False,
     ))
 
-    # 展示前几行
+    # Show a few sample rows
     sample = duck_con.execute(
         "SELECT * FROM stock_data WHERE Symbol='AAPL' ORDER BY Date DESC LIMIT 5"
     ).fetchdf()
@@ -423,7 +424,7 @@ def step2_columnar(duck_con, mysql_engine, n_runs: int):
         border_style="blue", expand=False,
     ))
 
-    # -- Q_NARROW: 只读 Close + Volume --
+    # -- Q_NARROW: reads only Close + Volume --
     console.print("\n[bold]Query A: Narrow Scan[/bold] — reads only Close + Volume (2/7 cols)")
     console.print(f"[dim]{Q_NARROW.strip()}[/dim]")
 
@@ -432,7 +433,7 @@ def step2_columnar(duck_con, mysql_engine, n_runs: int):
     if mysql_engine:
         _, mysql_narrow, _ = timed_query(mysql_engine, Q_NARROW, "mysql", n_runs)
 
-    # -- Q_WIDE: 读全部 7 列 --
+    # -- Q_WIDE: reads all 7 columns --
     console.print("\n[bold]Query B: Wide Scan[/bold] — reads all 7 columns (SELECT *)")
     console.print(f"[dim]{Q_WIDE.strip()}[/dim]")
 
@@ -441,7 +442,7 @@ def step2_columnar(duck_con, mysql_engine, n_runs: int):
     if mysql_engine:
         _, mysql_wide, _ = timed_query(mysql_engine, Q_WIDE, "mysql", n_runs)
 
-    # -- 对比表 --
+    # -- Comparison table --
     table = Table(title="Columnar Storage: Narrow vs Wide", box=box.ROUNDED, show_lines=True)
     table.add_column("Query", style="bold")
     table.add_column("Cols Read")
@@ -511,7 +512,7 @@ def step3_vectorized(duck_con, mysql_engine, n_runs: int):
         table.add_row(label, operator, f"{duck_ms:.1f}",
                       f"{mysql_ms:.1f}" if mysql_ms > 0 else "N/A", sp)
 
-        # 展示前 3 行结果
+        # Show first 3 result rows
         if df_duck is not None and not df_duck.empty:
             console.print(df_duck.head(3).to_string(index=False))
 
@@ -668,7 +669,7 @@ def main():
     if not args.auto:
         pause("Press Enter to start Step 1: Data Loading...")
 
-    # ── 加载数据 ──
+    # ── Load data ──
     from downloader import fetch_stock_data, DEFAULT_SYMBOLS, EXTENDED_SYMBOLS
     from db_run import setup_duckdb, setup_mysql
 
@@ -679,10 +680,10 @@ def main():
     df = fetch_stock_data(symbols, data_dir=DATA_DIR)
     console.print(f"[green]Loaded {len(df):,} rows, {df['Symbol'].nunique()} stocks[/green]")
 
-    # 初始化 DuckDB
+    # Initialize DuckDB
     duck_con = setup_duckdb(df, DUCKDB_FILE)
 
-    # 初始化 MySQL
+    # Initialize MySQL
     mysql_engine = None
     if not args.no_mysql:
         mysql_engine = setup_mysql(df)

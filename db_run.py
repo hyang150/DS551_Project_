@@ -1,6 +1,7 @@
 """
-db_run.py — DuckDB vs MySQL 性能对比 Benchmark
-包含数据库初始化、查询执行、多次运行取中位数、结果保存
+db_run.py — DuckDB vs MySQL performance benchmark.
+Handles database initialization, query execution, repeated runs with
+median aggregation, and persisting results to disk.
 """
 
 import csv
@@ -34,7 +35,7 @@ except ImportError:
 console = Console()
 
 # ============================================================
-#  MySQL 配置 — 优先读环境变量，回退到本地默认
+#  MySQL config — env vars take priority, with local defaults
 # ============================================================
 MYSQL_USER     = os.getenv("MYSQL_USER",     "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
@@ -44,18 +45,19 @@ MYSQL_DB       = os.getenv("MYSQL_DB",       "stock_db")
 
 
 # ============================================================
-#  Benchmark 查询集合
-#  每条查询代表一种典型的 OLAP 分析场景
-#  mapping 字段直接对应 midterm report 的 "Internals → Application" 映射
+#  Benchmark query catalog
+#  Each query targets one canonical OLAP scenario; the `mapping`
+#  field corresponds directly to the "Internals -> Application"
+#  section of the midterm report.
 # ============================================================
 BENCHMARK_QUERIES = {
     "Q1_50day_MA": {
-        "description": "50日均线 (Window Function)",
+        "description": "50-day moving average (window function)",
         "focus": "Vectorized Execution",
         "mapping": (
-            "DuckDB: STREAMING_WINDOW operator 按 2048-tuple chunk 批量计算 AVG，"
-            "利用 SIMD 指令加速。\n"
-            "MySQL: 逐行迭代 window frame，每行独立计算，function call overhead 高。"
+            "DuckDB: STREAMING_WINDOW operator batches AVG over 2048-tuple chunks "
+            "and benefits from SIMD acceleration.\n"
+            "MySQL: iterates the window frame row-by-row, paying function-call overhead per row."
         ),
         "sql": """
             SELECT
@@ -71,12 +73,12 @@ BENCHMARK_QUERIES = {
         """,
     },
     "Q2_daily_volatility": {
-        "description": "每日波动率 — Narrow Projection (只读 3 列)",
+        "description": "Daily volatility — narrow projection (3 cols)",
         "focus": "Columnar Storage — Column Pruning",
         "mapping": (
-            "DuckDB: 列存只读 High/Low/Close 三列的 column segment，"
-            "跳过 Open/Volume/Symbol/Date，I/O 减少 ~57%。\n"
-            "MySQL: 行存必须读取整行再丢弃不需要的列。"
+            "DuckDB: reads only the High/Low/Close column segments, "
+            "skipping Open/Volume/Symbol/Date — about 57% less I/O.\n"
+            "MySQL: row store must fetch the whole tuple and discard unused columns."
         ),
         "sql": """
             SELECT
@@ -89,12 +91,12 @@ BENCHMARK_QUERIES = {
         """,
     },
     "Q3_annual_summary": {
-        "description": "年度汇总统计 (GROUP BY + 多聚合)",
+        "description": "Annual summary (GROUP BY + multi-aggregate)",
         "focus": "Vectorized Aggregation",
         "mapping": (
-            "DuckDB: PERFECT_HASH_GROUP_BY / HASH_GROUP_BY operator，"
-            "对 vector chunk 内数据批量 hash + aggregate。\n"
-            "MySQL: 逐行读取 → hash → 更新聚合状态，cache miss 率高。"
+            "DuckDB: PERFECT_HASH_GROUP_BY / HASH_GROUP_BY operators "
+            "hash + aggregate batches of values inside each vector chunk.\n"
+            "MySQL: row-by-row read -> hash -> update aggregate state; cache misses dominate."
         ),
         "sql": """
             SELECT
@@ -110,12 +112,12 @@ BENCHMARK_QUERIES = {
         """,
     },
     "Q4_full_scan_narrow": {
-        "description": "全表聚合 — Narrow (只读 Close + Volume)",
+        "description": "Full-table aggregate — narrow (Close + Volume only)",
         "focus": "Columnar Storage I/O — Narrow Scan",
         "mapping": (
-            "DuckDB: 只扫描 Close 和 Volume 两列的 column segment，"
-            "压缩后 I/O 极小。\n"
-            "MySQL: 全行扫描，读取所有 7 列数据。"
+            "DuckDB: scans only the Close and Volume column segments; "
+            "compressed I/O is tiny.\n"
+            "MySQL: full row scan reading all 7 columns."
         ),
         "sql": """
             SELECT COUNT(*), ROUND(AVG(Close), 4), SUM(Volume)
@@ -123,12 +125,12 @@ BENCHMARK_QUERIES = {
         """,
     },
     "Q5_rolling_stddev": {
-        "description": "20日滚动标准差 (波动率指标)",
+        "description": "20-day rolling stddev (volatility indicator)",
         "focus": "Vectorized Window + STDDEV",
         "mapping": (
-            "DuckDB: STREAMING_WINDOW 内 STDDEV 按 chunk 批量计算，"
-            "避免重复遍历 window frame。\n"
-            "MySQL: 每行重新扫描 20 行 frame 计算标准差。"
+            "DuckDB: STREAMING_WINDOW computes STDDEV in chunked batches, "
+            "avoiding repeated window-frame traversal.\n"
+            "MySQL: re-scans the 20-row frame for every row to compute the stddev."
         ),
         "sql": """
             SELECT
@@ -146,13 +148,13 @@ BENCHMARK_QUERIES = {
         """,
     },
     "Q6_wide_projection": {
-        "description": "全列投影 SELECT * — Wide Scan 对照实验",
-        "focus": "Columnar Storage — Wide Scan (列存劣势场景)",
+        "description": "SELECT * — wide-scan control experiment",
+        "focus": "Columnar Storage — Wide Scan (column-store disadvantage)",
         "mapping": (
-            "DuckDB: 需要读取所有列并重组行 (tuple reconstruction)，"
-            "列存优势消失，甚至可能比行存略慢。\n"
-            "MySQL: 行存天然按行组织，SELECT * 无额外开销。\n"
-            "对照 Q4 的 narrow scan，说明列存适用场景。"
+            "DuckDB: must read every column and reconstruct tuples; "
+            "the columnar advantage disappears and can be slightly slower than a row store.\n"
+            "MySQL: native row layout makes SELECT * essentially free.\n"
+            "Pairs with Q4's narrow scan to show when a column store wins vs loses."
         ),
         "sql": """
             SELECT *
@@ -209,10 +211,10 @@ BENCHMARK_QUERIES = {
 
 
 # ============================================================
-#  数据库初始化
+#  Database initialization
 # ============================================================
 def setup_duckdb(df: pd.DataFrame, duckdb_file: str) -> duckdb.DuckDBPyConnection:
-    """初始化 DuckDB，建表 + 索引"""
+    """Initialize DuckDB: create table + indexes."""
     console.print(f"\n[cyan][*] Initializing DuckDB ({duckdb_file})...[/cyan]")
     t0 = time.perf_counter()
 
@@ -229,7 +231,7 @@ def setup_duckdb(df: pd.DataFrame, duckdb_file: str) -> duckdb.DuckDBPyConnectio
 
 
 def setup_mysql(df: pd.DataFrame):
-    """初始化 MySQL，建表 + 索引（保证公平对比）"""
+    """Initialize MySQL: create table + indexes (for a fair comparison)."""
     console.print(f"\n[cyan][*] Connecting to WSL MySQL ({MYSQL_HOST}:{MYSQL_PORT})...[/cyan]")
 
     try:
@@ -241,14 +243,14 @@ def setup_mysql(df: pd.DataFrame):
             conn.execute(text(f"CREATE DATABASE IF NOT EXISTS {MYSQL_DB}"))
     except Exception as e:
         err_msg = str(e)
-        console.print(f"[red][!] MySQL 连接失败: {e}[/red]")
+        console.print(f"[red][!] MySQL connection failed: {e}[/red]")
         if "cryptography" in err_msg:
-            console.print("[yellow]    → MySQL 8 auth 需要 cryptography 包:[/yellow]")
-            console.print("[yellow]      pip install cryptography   (或 uv add cryptography)[/yellow]")
+            console.print("[yellow]    -> MySQL 8 auth needs the cryptography package:[/yellow]")
+            console.print("[yellow]      pip install cryptography   (or: uv add cryptography)[/yellow]")
         elif "Access denied" in err_msg:
-            console.print("[yellow]    → 密码不对，编辑 .env 设置 MYSQL_PASSWORD[/yellow]")
+            console.print("[yellow]    -> Wrong password — edit .env to set MYSQL_PASSWORD[/yellow]")
         else:
-            console.print("[yellow]    → 确认 MySQL 已启动: sudo service mysql start[/yellow]")
+            console.print("[yellow]    -> Make sure MySQL is running: sudo service mysql start[/yellow]")
         return None
 
     engine = create_engine(
@@ -262,7 +264,7 @@ def setup_mysql(df: pd.DataFrame):
             "stock_data", engine, if_exists="replace", index=False,
             chunksize=5000, method="multi",
             dtype={
-                "Symbol": String(10),      # VARCHAR(10)，避免 TEXT 无法建索引
+                "Symbol": String(10),      # VARCHAR(10) so we can index it (TEXT can't be indexed)
                 "Date":   Date(),
                 "Open":   Float(),
                 "High":   Float(),
@@ -272,7 +274,7 @@ def setup_mysql(df: pd.DataFrame):
             },
         )
 
-        # ★ 关键改进：给 MySQL 也建索引，保证公平对比
+        # Build the same indexes on MySQL to keep the comparison fair
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE stock_data ADD INDEX idx_symbol (Symbol)"))
             conn.execute(text("ALTER TABLE stock_data ADD INDEX idx_date (Date)"))
@@ -282,17 +284,17 @@ def setup_mysql(df: pd.DataFrame):
         elapsed = time.perf_counter() - t0
         console.print(f"[green][+] MySQL ready (with indexes), load time {elapsed:.3f}s[/green]")
     except Exception as e:
-        console.print(f"[red][!] MySQL 写入失败: {e}[/red]")
+        console.print(f"[red][!] MySQL load failed: {e}[/red]")
         return None
 
     return engine
 
 
 # ============================================================
-#  查询执行 — 支持多次运行取中位数
+#  Query execution — multiple runs with median aggregation
 # ============================================================
 def run_query_once(engine_or_con, sql: str, db_type: str) -> tuple[pd.DataFrame | None, float]:
-    """执行单次查询，返回 (DataFrame, 毫秒耗时)"""
+    """Run a query once. Returns (DataFrame, elapsed_ms)."""
     try:
         t0 = time.perf_counter()
         if db_type == "duckdb":
@@ -302,14 +304,15 @@ def run_query_once(engine_or_con, sql: str, db_type: str) -> tuple[pd.DataFrame 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         return result, round(elapsed_ms, 3)
     except Exception as e:
-        console.print(f"[red]  [{db_type}] 查询失败: {e}[/red]")
+        console.print(f"[red]  [{db_type}] query failed: {e}[/red]")
         return None, -1.0
 
 
 def run_query(engine_or_con, sql: str, db_type: str, n_runs: int = 5) -> tuple[pd.DataFrame | None, float, list[float]]:
     """
-    执行 n_runs 次查询，第一次 warm-up 丢弃，取后 (n_runs-1) 次中位数。
-    返回 (最后一次 DataFrame, 中位数 ms, 全部耗时列表)
+    Run a query n_runs times. The first run is treated as warm-up and discarded;
+    the median of the remaining (n_runs-1) runs is reported.
+    Returns (last_df, median_ms, list_of_all_times).
     """
     all_times = []
     last_df = None
@@ -320,7 +323,7 @@ def run_query(engine_or_con, sql: str, db_type: str, n_runs: int = 5) -> tuple[p
         if df is not None:
             last_df = df
 
-    # 丢弃第一次 (warm-up)，取后面的中位数
+    # Drop the warm-up run, take median of the rest
     valid_times = [t for t in all_times[1:] if t >= 0]
     if valid_times:
         median_ms = round(statistics.median(valid_times), 3)
@@ -331,7 +334,7 @@ def run_query(engine_or_con, sql: str, db_type: str, n_runs: int = 5) -> tuple[p
 
 
 # ============================================================
-#  运行全套 Benchmark
+#  Run the full benchmark suite
 # ============================================================
 def run_benchmark(
     duckdb_con,
@@ -341,14 +344,14 @@ def run_benchmark(
     output_dir: Path = Path.cwd() / "output",
 ) -> tuple[list[dict], str]:
     """
-    运行 benchmark，返回 (results_list, session_timestamp)。
+    Run the benchmark. Returns (results_list, session_timestamp).
 
     Parameters
     ----------
     n_runs : int
-        每条查询运行次数（第一次 warm-up）
+        Runs per query (first run is the warm-up).
     query_ids : list[str] | None
-        指定运行哪些查询，None = 全部
+        Which queries to run; None means all.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -365,7 +368,7 @@ def run_benchmark(
         expand=False,
     ))
 
-    # Rich 表格
+    # Rich summary table
     table = Table(title="Benchmark Results (Median)", show_lines=True)
     table.add_column("Query ID",      style="bold")
     table.add_column("Description",   style="dim")
@@ -406,7 +409,7 @@ def run_benchmark(
             speedup_str,
         )
 
-        # 预览前 3 行
+        # Preview first 3 rows of the result
         if duck_df is not None and not duck_df.empty:
             console.print(duck_df.head(3).to_string(index=False))
 
@@ -428,12 +431,12 @@ def run_benchmark(
 
 
 # ============================================================
-#  保存结果
+#  Persist results
 # ============================================================
 def save_results(results: list[dict], session_ts: str, output_dir: Path = Path.cwd() / "output"):
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # CSV — 追加模式
+    # CSV — append mode
     csv_path = output_dir / "benchmark_results.csv"
     flat_results = []
     for r in results:
@@ -449,20 +452,20 @@ def save_results(results: list[dict], session_ts: str, output_dir: Path = Path.c
             writer.writeheader()
         writer.writerows(flat_results)
 
-    # JSON 快照
+    # JSON snapshot for this session
     json_path = output_dir / f"benchmark_{session_ts}.json"
     with open(json_path, "w") as f:
         json.dump(results, f, indent=2, default=str)
 
-    console.print(f"\n[green][+] 结果已保存:[/green]")
-    console.print(f"    CSV  (累计) → {csv_path}")
-    console.print(f"    JSON (本次) → {json_path}")
+    console.print(f"\n[green][+] Results saved:[/green]")
+    console.print(f"    CSV  (cumulative) -> {csv_path}")
+    console.print(f"    JSON (this run)   -> {json_path}")
 
     return csv_path, json_path
 
 
 # ============================================================
-#  存储大小对比
+#  Storage size comparison
 # ============================================================
 def compare_storage_sizes(data_dir: Path, mysql_engine=None):
     """Compare file sizes: Parquet vs CSV vs DuckDB vs MySQL InnoDB."""
@@ -548,7 +551,7 @@ def run_json_profiling(con, query_ids: list[str] | None = None,
 
 
 # ============================================================
-#  Scaling 实验 — 不同数据量的 speedup 对比
+#  Scaling experiment — speedup at different dataset sizes
 # ============================================================
 def run_scaling_experiment(
     duckdb_con, mysql_engine,

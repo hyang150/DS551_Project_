@@ -1,14 +1,15 @@
 """
-run_all_experiments.py — 一键跑完所有实验，生成 demo 和 final report 所需的全部数据
+run_all_experiments.py — One-shot runner that produces every artifact
+needed for the demo and the final report.
 
 Usage:
-    python run_all_experiments.py                  # 全流程（需要 MySQL）
-    python run_all_experiments.py --no-mysql        # 跳过 MySQL
-    python run_all_experiments.py --skip-download   # 用缓存数据
+    python run_all_experiments.py                   # full pipeline (MySQL required)
+    python run_all_experiments.py --no-mysql        # skip MySQL
+    python run_all_experiments.py --skip-download   # use cached data
 
-实验清单:
-    Exp 1: 小数据集 benchmark (5 stocks × 10y, ~12K rows)
-    Exp 2: 大数据集 benchmark (30 stocks × 15y, ~100K rows)
+Experiments:
+    Exp 1: Small-dataset benchmark  (5 stocks x 10y,  ~12K rows)
+    Exp 2: Large-dataset benchmark  (30 stocks x 15y, ~100K rows)
     Exp 3: Storage size comparison
     Exp 4: DuckDB JSON profiling (operator-level timing)
     Exp 5: EXPLAIN ANALYZE report

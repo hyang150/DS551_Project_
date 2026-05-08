@@ -1,6 +1,6 @@
 """
-downloader.py — 股票数据下载 & 本地缓存
-支持 CLI 指定股票列表、日期范围
+downloader.py — Stock data download & local cache.
+Supports CLI selection of symbols and date range.
 """
 
 import pandas as pd
@@ -10,12 +10,12 @@ from rich.console import Console
 
 console = Console()
 
-# 默认配置
+# Default config
 DEFAULT_SYMBOLS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
 DEFAULT_START   = "2015-01-01"
 DEFAULT_END     = "2025-01-01"
 
-# 扩展股票池 — 用于大数据量测试
+# Extended symbol pool — used for the large-dataset experiment
 EXTENDED_SYMBOLS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
     "META", "TSLA", "BRK-B", "JPM", "V",
@@ -33,16 +33,16 @@ def fetch_stock_data(
     data_dir: Path = Path.cwd() / "data",
 ) -> pd.DataFrame:
     """
-    从 Yahoo Finance 下载 OHLCV 数据，本地 Parquet + CSV 缓存。
+    Download OHLCV data from Yahoo Finance with a local Parquet + CSV cache.
 
     Parameters
     ----------
     symbols : list[str]
-        股票代码列表，为 None 时使用默认 5 只
+        List of ticker symbols; defaults to the 5 large-caps when None.
     start, end : str
-        YYYY-MM-DD 格式日期
+        Date range in YYYY-MM-DD format.
     data_dir : Path
-        数据存储目录
+        Directory used for the on-disk cache.
 
     Returns
     -------
@@ -53,12 +53,12 @@ def fetch_stock_data(
 
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    # 缓存文件名：用股票数量 + 日期范围唯一标识
+    # Cache filename keyed by symbol count + date range
     tag = f"{len(symbols)}stocks_{start[:4]}_{end[:4]}"
     parquet_path = data_dir / f"{tag}.parquet"
     csv_path     = data_dir / f"{tag}.csv"
 
-    # 命中缓存
+    # Cache hit
     if parquet_path.exists():
         console.print(f"[green][+] Loaded from local cache: {parquet_path.name}[/green]")
         df = pd.read_parquet(parquet_path)
@@ -74,7 +74,7 @@ def fetch_stock_data(
             df = yf.download(sym, start=start, end=end, auto_adjust=True, progress=False)
             df.reset_index(inplace=True)
 
-            # yfinance ≥0.2.x 可能返回 MultiIndex 列
+            # yfinance >=0.2.x can return MultiIndex columns
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = [col[0] for col in df.columns]
 
@@ -93,7 +93,7 @@ def fetch_stock_data(
     combined = pd.concat(frames, ignore_index=True)
     combined.sort_values(["Symbol", "Date"], inplace=True)
 
-    # 持久化
+    # Persist to disk
     combined.to_parquet(parquet_path, index=False)
     combined.to_csv(csv_path, index=False)
 
