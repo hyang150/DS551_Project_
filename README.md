@@ -29,7 +29,7 @@ For the full three-engine numbers, see [Optional MySQL setup](#optional-mysql-se
 
 ## Setup
 
-### 1. Dependencies (uv)
+### 1. Dependencies (uv — recommended)
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh        # macOS / Linux / WSL
@@ -37,6 +37,29 @@ uv sync                                                # creates .venv/, install
 ```
 
 Run any command via `uv run python ...`. If you'd rather drop the prefix, activate once: `source .venv/bin/activate`.
+
+### 1b. Dependencies (plain pip — no uv)
+
+If you don't have `uv`, use a plain virtual environment with `requirements.txt`. The lockfile is regenerated from `pyproject.toml` so the package set is identical to the uv path.
+
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python demo.py --skip-download --no-mysql
+```
+
+**macOS / Linux / WSL (bash):**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python demo.py --skip-download --no-mysql
+```
+
+> If PowerShell blocks `Activate.ps1` with an execution-policy error, run once:
+> `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`.
 
 ### Optional MySQL setup
 
